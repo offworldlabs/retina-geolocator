@@ -78,9 +78,8 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         initial_guess = generate_initial_guess(
             track,
             tx_enu,
-            geometry['antenna_boresight'],
-            radar_config.frequency,
-            altitude_km=geo_config.initial_altitude_m / 1000
+            geometry['antenna_boresight_vector'],
+            radar_config.frequency
         )
 
     # Solve track
@@ -91,16 +90,15 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         (0, 0, 0),  # RX at origin
         radar_config.frequency,
         geometry['antenna_boresight'],
-        radar_config.rx_alt,
-        beamwidth_deg=geo_config.beamwidth_deg
+        radar_config.rx_alt
     )
 
     # Store solution for next event with this track number
     if result['success']:
-        previous_solutions[track_number] = result['final_state']
+        previous_solutions[track_number] = result['state']
 
     # Convert final position to LLA
-    final_enu = result['final_state'][:3]
+    final_enu = result['state'][:3]
     final_lla = enu_to_lla(final_enu, radar_config.rx_lat, radar_config.rx_lon, radar_config.rx_alt)
 
     # Quality flag based on track length
@@ -131,9 +129,9 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         'latitude': final_lla[0],
         'longitude': final_lla[1],
         'altitude': final_lla[2],
-        'velocity_east': result['final_state'][3],
-        'velocity_north': result['final_state'][4],
-        'velocity_up': result['final_state'][5],
+        'velocity_east': result['state'][3],
+        'velocity_north': result['state'][4],
+        'velocity_up': result['state'][5],
         'rms_delay_us': result['rms_delay'],
         'rms_doppler_hz': result['rms_doppler'],
         'cost': result['cost'],
