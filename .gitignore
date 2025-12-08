@@ -1,0 +1,49 @@
+# Data files
+*.jsonl
+*.json
+*.log
+
+# Plots and results
+*_plots/
+*.png
+*.jpg
+*.pdf
+
+# Analysis documents (generated)
+*_SUMMARY.md
+*_PLAN.md
+*_RESULTS.md
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# System files
+.DS_Store
+.vscode/
+.idea/
+
+# Data directory contents (keep structure)
+data/input/*
+!data/input/.gitkeep
+
+data/output/*
+!data/output/.gitkeep
+
+data/plots/*
+!data/plots/.gitkeep
+
+data/config/*
+!data/config/.gitkeep
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+ENV/
