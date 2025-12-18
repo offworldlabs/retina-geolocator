@@ -287,25 +287,17 @@ def select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_
 
     # Try ADS-B if enabled and data available
     if use_adsb and track.adsb_initialized:
-        # Check if first detection has ADS-B data
-        has_adsb_data = False
-        for det in track.detections:
-            if det.adsb is not None:
-                has_adsb_data = True
-                break
+        guess = generate_adsb_initial_guess(track, rx_lla, config)
 
-        if has_adsb_data:
-            guess = generate_adsb_initial_guess(track, rx_lla, config)
+        if guess is not None:
+            return guess, "adsb"
 
-            if guess is not None:
-                return guess, "adsb"
-
-            # ADS-B guess failed
-            if not adsb_fallback:
-                raise ValueError(
-                    f"ADS-B initial guess failed for track {track.track_id}, "
-                    "fallback to geometric disabled"
-                )
+        # ADS-B guess failed
+        if not adsb_fallback:
+            raise ValueError(
+                f"ADS-B initial guess failed for track {track.track_id}, "
+                "fallback to geometric disabled"
+            )
 
     # Geometric guess (current method)
     guess = generate_initial_guess(track, tx_enu, boresight_vector, frequency)

@@ -54,7 +54,8 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
             timestamp=det_dict['timestamp'],
             delay=det_dict['delay'],
             doppler=det_dict['doppler'],
-            snr=det_dict.get('snr', 0)
+            snr=det_dict.get('snr', 0),
+            adsb=det_dict.get('adsb')
         )
         detections.append(det)
 
