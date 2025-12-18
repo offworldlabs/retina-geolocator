@@ -132,14 +132,15 @@ def test_generate_adsb_initial_guess():
     print(f"  Velocity: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f} m/s")
 
     # Validate position
+    # Note: alt_baro 5000 feet = 1524 meters = 1.524 km
     assert abs(x) < 5, f"E should be small, got {x}"
     assert 8 < y < 12, f"N should be ~10km, got {y}"
-    assert 4.9 < z < 5.1, f"U should be ~5km, got {z}"
+    assert 1.4 < z < 1.6, f"U should be ~1.5km (5000ft), got {z}"
 
     # Validate velocity (250kt east)
     assert 126 < vx < 131, f"vx should be ~128 m/s, got {vx}"
     assert abs(vy) < 5, f"vy should be ~0, got {vy}"
-    assert vz == 0, f"vz should be 0, got {vz}"
+    assert abs(vz) < 0.001, f"vz should be ~0, got {vz}"
 
     print("  ✓ Valid ADS-B data produces correct guess")
 

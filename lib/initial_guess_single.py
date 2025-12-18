@@ -223,11 +223,12 @@ def generate_adsb_initial_guess(track, rx_lla, config):
     # Get position
     lat = adsb['lat']
     lon = adsb['lon']
-    alt = adsb.get('alt_baro', 0)  # Default to 0 if missing
+    alt_feet = adsb.get('alt_baro', 0)  # ADS-B altitude in feet
+    alt_meters = alt_feet * 0.3048  # Convert feet to meters
 
     # Convert position: LLA → ENU (km)
     try:
-        x, y, z = lla_to_enu_km(lat, lon, alt, rx_lla[0], rx_lla[1], rx_lla[2])
+        x, y, z = lla_to_enu_km(lat, lon, alt_meters, rx_lla[0], rx_lla[1], rx_lla[2])
     except Exception:
         return None
 
