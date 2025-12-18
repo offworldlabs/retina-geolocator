@@ -207,6 +207,7 @@ def test_unit_dual_mode_selection(stats):
         def __init__(self, use_adsb=True, adsb_fallback=True):
             self.use_adsb_initial_guess = use_adsb
             self.adsb_fallback_to_geometric = adsb_fallback
+            self.validate_against_adsb = True
 
     rx_lla = (37.7644, -122.3954, 23)
     tx_enu = (50, 0, 0.783)
@@ -255,6 +256,7 @@ def test_integration_end_to_end_adsb(stats):
         def __init__(self):
             self.use_adsb_initial_guess = True
             self.adsb_fallback_to_geometric = True
+            self.validate_against_adsb = True
 
     config = MockConfig()
 
@@ -274,9 +276,10 @@ def test_integration_end_to_end_adsb(stats):
     print("  ✓ ADS-B track processed successfully")
 
     # Verify guess quality
-    # Note: alt_baro is in meters in this implementation
+    # Note: alt_baro is in feet (ADS-B standard), converted to meters internally
+    # 5000 feet = 1524 meters = 1.524 km
     x, y, z, vx, vy, vz = guess
-    assert 4.9 < z < 5.1, f"Altitude should be ~5km (5000m), got {z:.3f}km"
+    assert 1.4 < z < 1.6, f"Altitude should be ~1.5km (5000ft = 1524m), got {z:.3f}km"
     assert 120 < vx < 135, f"Velocity should be ~128 m/s, got {vx:.2f} m/s"
     stats.record_pass()
     print(f"  ✓ ADS-B guess quality: alt={z:.3f}km, vel={vx:.2f}m/s")
@@ -295,6 +298,7 @@ def test_integration_backward_compatibility(stats):
         def __init__(self):
             self.use_adsb_initial_guess = True
             self.adsb_fallback_to_geometric = True
+            self.validate_against_adsb = True
 
     config = MockConfig()
 
@@ -332,6 +336,7 @@ def test_integration_mixed_dataset(stats):
         def __init__(self):
             self.use_adsb_initial_guess = True
             self.adsb_fallback_to_geometric = True
+            self.validate_against_adsb = True
 
     config = MockConfig()
 
@@ -384,6 +389,7 @@ def test_integration_fallback_behavior(stats):
         def __init__(self):
             self.use_adsb_initial_guess = True
             self.adsb_fallback_to_geometric = True
+            self.validate_against_adsb = True
 
     config = MockConfig()
 
