@@ -108,6 +108,15 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
     final_enu = result['state'][:3]
     final_lla = enu_to_lla(final_enu, radar_config.rx_lat, radar_config.rx_lon, radar_config.rx_alt)
 
+    # Convert initial guess to LLA
+    initial_guess_enu = initial_guess[:3]
+    initial_guess_lla = enu_to_lla(initial_guess_enu, radar_config.rx_lat, radar_config.rx_lon, radar_config.rx_alt)
+
+    # Calculate position delta (3D Euclidean distance in meters)
+    initial_enu_m = np.array(initial_guess_enu) * 1000
+    final_enu_m = np.array(final_enu) * 1000
+    position_delta_m = float(np.linalg.norm(final_enu_m - initial_enu_m))
+
     # Quality flag based on track length
     if n_det < 5:
         quality = "very_short"
@@ -146,8 +155,26 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         'used_previous_solution': use_previous,
         'initial_guess_source': initial_guess_source,
         'message': result['message'],
-        'nfev': result['nfev']
+        'nfev': result['nfev'],
+        'initial_guess': {
+            'source': initial_guess_source,
+            'latitude': initial_guess_lla[0],
+            'longitude': initial_guess_lla[1],
+            'altitude': initial_guess_lla[2],
+            'velocity_east': initial_guess[3],
+            'velocity_north': initial_guess[4],
+            'velocity_up': initial_guess[5]
+        },
+        'convergence': {
+            'iterations': result['nfev'],
+            'position_delta_m': position_delta_m
+        }
     }
+
+    # Add ADS-B metadata if track has ADS-B
+    if track.adsb_initialized:
+        output['adsb_hex'] = track.adsb_hex
+        output['adsb_initialized'] = track.adsb_initialized
 
     return output
 
