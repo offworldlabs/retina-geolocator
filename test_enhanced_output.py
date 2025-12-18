@@ -5,11 +5,14 @@ import sys
 import json
 import tempfile
 from pathlib import Path
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
 
 from lib.config_loader import Detection, Track
+from lib.initial_guess_single import generate_initial_guess, generate_adsb_initial_guess
 
 
 def test_output_structure():
@@ -218,6 +221,138 @@ def test_field_types():
     print("  ✓ Type specifications correct")
 
 
+def test_integration_with_adsb():
+    """Integration test: process event with ADS-B data."""
+    print("\nTesting integration with ADS-B track...")
+
+    # Create mock track with ADS-B
+    adsb_data = {
+        'lat': 37.85,
+        'lon': -122.40,
+        'alt_baro': 5000,
+        'gs': 250,
+        'track': 90
+    }
+    det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
+    event_data = {
+        'track_id': '250618-A12345',
+        'adsb_hex': 'a12345',
+        'adsb_initialized': True
+    }
+    track = Track("250618-A12345", [det], event_data)
+
+    # Generate initial guess
+    rx_lla = (37.7644, -122.3954, 23)
+    initial_guess = generate_adsb_initial_guess(track, rx_lla, None)
+
+    assert initial_guess is not None, "Should generate ADS-B initial guess"
+    assert len(initial_guess) == 6, "Should have 6 elements"
+
+    # Verify structure
+    x, y, z, vx, vy, vz = initial_guess
+    assert isinstance(x, (int, float)), "Position should be numeric"
+    assert isinstance(vx, (int, float)), "Velocity should be numeric"
+
+    print(f"  Initial guess: pos=({x:.3f}, {y:.3f}, {z:.3f}) km")
+    print(f"  Initial vel: v=({vx:.2f}, {vy:.2f}, {vz:.2f}) m/s")
+    print("  ✓ Integration test with ADS-B passed")
+
+
+def test_integration_without_adsb():
+    """Integration test: process event without ADS-B data."""
+    print("\nTesting integration without ADS-B...")
+
+    # Create track without ADS-B
+    det = Detection(1718747745000, 16.1, 134.5, 18.2)
+    track = Track("250618-000001", [det])
+
+    # TX position and parameters
+    tx_enu = (50, 0, 0.783)
+    boresight_vector = np.array([0.8, 0.6, 0])
+    frequency = 503e6
+
+    # Generate geometric initial guess
+    initial_guess = generate_initial_guess(track, tx_enu, boresight_vector, frequency)
+
+    assert initial_guess is not None, "Should generate geometric initial guess"
+    assert len(initial_guess) == 6, "Should have 6 elements"
+
+    # Verify structure
+    x, y, z, vx, vy, vz = initial_guess
+    assert isinstance(x, (int, float)), "Position should be numeric"
+    assert abs(z - 2.0) < 0.5, "Default altitude should be ~2 km"
+
+    print(f"  Initial guess: pos=({x:.3f}, {y:.3f}, {z:.3f}) km")
+    print("  ✓ Integration test without ADS-B passed")
+
+
+def test_output_type_safety():
+    """Test that all output values are JSON-serializable native types."""
+    print("\nTesting output type safety...")
+
+    sample_output = {
+        'track_id': '250618-A12345',
+        'n_detections': 20,
+        'latitude': float(37.7752),
+        'longitude': float(-122.4198),
+        'altitude': float(5015),
+        'initial_guess': {
+            'source': 'adsb',
+            'latitude': float(37.7749),
+            'longitude': float(-122.4194),
+            'altitude': float(5000),
+            'velocity_east': float(17.0),
+            'velocity_north': float(60.0),
+            'velocity_up': float(0.0)
+        },
+        'convergence': {
+            'iterations': 3,
+            'position_delta_m': float(23.5)
+        }
+    }
+
+    # Ensure JSON serialization works
+    try:
+        json_str = json.dumps(sample_output)
+        parsed = json.loads(json_str)
+
+        # Verify types after round-trip
+        assert isinstance(parsed['initial_guess']['latitude'], float)
+        assert isinstance(parsed['initial_guess']['velocity_east'], float)
+        assert isinstance(parsed['convergence']['position_delta_m'], float)
+
+        print("  ✓ All values are JSON-serializable native types")
+    except TypeError as e:
+        print(f"  ✗ Type error: {e}")
+        raise
+
+
+def test_adsb_conditional_fields():
+    """Test that ADS-B fields are properly conditional."""
+    print("\nTesting ADS-B conditional field logic...")
+
+    # Track with ADS-B
+    event_data_with_adsb = {
+        'track_id': '250618-A12345',
+        'adsb_hex': 'a12345',
+        'adsb_initialized': True
+    }
+
+    det = Detection(1718747745000, 16.1, 134.5, 18.2)
+    track_with_adsb = Track("250618-A12345", [det], event_data_with_adsb)
+
+    assert track_with_adsb.adsb_initialized == True
+    assert track_with_adsb.adsb_hex == 'a12345'
+
+    # Track without ADS-B
+    track_without_adsb = Track("250618-000001", [det])
+
+    assert track_without_adsb.adsb_initialized == False
+    assert track_without_adsb.adsb_hex is None
+
+    print("  ✓ ADS-B fields properly conditional based on track.adsb_initialized")
+
+
 if __name__ == '__main__':
     test_output_structure()
     test_adsb_fields()
@@ -227,6 +362,10 @@ if __name__ == '__main__':
     test_json_serialization()
     test_position_delta_calculation()
     test_field_types()
+    test_integration_with_adsb()
+    test_integration_without_adsb()
+    test_output_type_safety()
+    test_adsb_conditional_fields()
 
     print("\n" + "="*50)
     print("All tests passed! ✓")

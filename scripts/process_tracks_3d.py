@@ -153,17 +153,16 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         'cost': result['cost'],
         'success': result['success'],
         'used_previous_solution': use_previous,
-        'initial_guess_source': initial_guess_source,
         'message': result['message'],
         'nfev': result['nfev'],
         'initial_guess': {
             'source': initial_guess_source,
-            'latitude': initial_guess_lla[0],
-            'longitude': initial_guess_lla[1],
-            'altitude': initial_guess_lla[2],
-            'velocity_east': initial_guess[3],
-            'velocity_north': initial_guess[4],
-            'velocity_up': initial_guess[5]
+            'latitude': float(initial_guess_lla[0]),
+            'longitude': float(initial_guess_lla[1]),
+            'altitude': float(initial_guess_lla[2]),
+            'velocity_east': float(initial_guess[3]),
+            'velocity_north': float(initial_guess[4]),
+            'velocity_up': float(initial_guess[5])
         },
         'convergence': {
             'iterations': result['nfev'],
