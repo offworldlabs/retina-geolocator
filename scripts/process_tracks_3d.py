@@ -28,6 +28,7 @@ from lib import (
     Track,
     calculate_baseline_geometry,
     generate_initial_guess,
+    select_initial_guess,
     solve_track
 )
 
@@ -68,18 +69,23 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
 
     # Generate initial guess
     use_previous = False
+    initial_guess_source = None
+
     if geo_config.temporal_continuity and track_number in previous_solutions:
         # Use previous solution
         prev_state = previous_solutions[track_number]
         initial_guess = prev_state
         use_previous = True
+        initial_guess_source = "previous"
     else:
-        # Generate new initial guess
-        initial_guess = generate_initial_guess(
+        # Generate new initial guess using dual-mode router
+        initial_guess, initial_guess_source = select_initial_guess(
             track,
             tx_enu,
             geometry['antenna_boresight_vector'],
-            radar_config.frequency
+            radar_config.frequency,
+            geo_config,
+            radar_config.rx_lla
         )
 
     # Solve track
@@ -137,6 +143,7 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         'cost': result['cost'],
         'success': result['success'],
         'used_previous_solution': use_previous,
+        'initial_guess_source': initial_guess_source,
         'message': result['message'],
         'nfev': result['nfev']
     }
