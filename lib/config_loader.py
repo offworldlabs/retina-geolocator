@@ -5,7 +5,56 @@ Loads radar system config (config.yml) and geolocator config (geolocator_config.
 
 import yaml
 import json
+import math
 from pathlib import Path
+
+
+def validate_adsb_data(adsb):
+    """
+    Validate ADS-B data fields are within reasonable ranges.
+
+    Args:
+        adsb: Dictionary with ADS-B fields (lat, lon, alt_baro, gs, track)
+
+    Returns:
+        bool: True if valid, False if invalid or missing required fields
+    """
+    if not isinstance(adsb, dict):
+        return False
+
+    # Check required fields
+    if 'lat' not in adsb or 'lon' not in adsb:
+        return False
+
+    # Validate latitude
+    lat = adsb['lat']
+    if not isinstance(lat, (int, float)) or math.isnan(lat) or not (-90 <= lat <= 90):
+        return False
+
+    # Validate longitude
+    lon = adsb['lon']
+    if not isinstance(lon, (int, float)) or math.isnan(lon) or not (-180 <= lon <= 180):
+        return False
+
+    # Validate altitude (optional but common)
+    if 'alt_baro' in adsb:
+        alt = adsb['alt_baro']
+        if not isinstance(alt, (int, float)) or math.isnan(alt) or not (-2000 <= alt <= 50000):
+            return False
+
+    # Validate ground speed (optional)
+    if 'gs' in adsb:
+        gs = adsb['gs']
+        if not isinstance(gs, (int, float)) or math.isnan(gs) or not (0 <= gs <= 1000):
+            return False
+
+    # Validate track angle (optional)
+    if 'track' in adsb:
+        track = adsb['track']
+        if not isinstance(track, (int, float)) or math.isnan(track) or not (0 <= track < 360):
+            return False
+
+    return True
 
 
 class GeolocatorConfig:
@@ -63,14 +112,19 @@ def load_geolocator_config(config_path='geolocator_config.yml'):
 class Detection:
     """Single detection with timestamp, delay, Doppler, and SNR."""
 
-    def __init__(self, timestamp, delay, doppler, snr):
+    def __init__(self, timestamp, delay, doppler, snr, adsb=None):
         self.timestamp = timestamp  # Unix milliseconds
         self.delay = delay  # microseconds
         self.doppler = doppler  # Hz
         self.snr = snr  # dB
+        self.adsb = adsb  # Optional ADS-B dict (lat, lon, alt_baro, gs, track)
 
     def __repr__(self):
-        return f"Detection(t={self.timestamp}, delay={self.delay:.2f}μs, doppler={self.doppler:.2f}Hz, snr={self.snr:.1f}dB)"
+        base = f"Detection(t={self.timestamp}, delay={self.delay:.2f}μs, doppler={self.doppler:.2f}Hz, snr={self.snr:.1f}dB"
+        if self.adsb is not None:
+            base += ", adsb=✓"
+        base += ")"
+        return base
 
 
 class Track:
@@ -81,6 +135,14 @@ class Track:
         self.detections = detections  # List of Detection objects
         self.event_data = event_data  # Full event dict if needed
 
+        # Parse ADS-B metadata from event_data
+        self.adsb_hex = None
+        self.adsb_initialized = False
+
+        if event_data is not None:
+            self.adsb_hex = event_data.get('adsb_hex')
+            self.adsb_initialized = event_data.get('adsb_initialized', False)
+
     def __len__(self):
         return len(self.detections)
 
@@ -89,7 +151,11 @@ class Track:
             t_start = self.detections[0].timestamp
             t_end = self.detections[-1].timestamp
             duration = (t_end - t_start) / 1000  # seconds
-            return f"Track(id={self.track_id}, N={len(self)}, duration={duration:.1f}s)"
+            base = f"Track(id={self.track_id}, N={len(self)}, duration={duration:.1f}s"
+            if self.adsb_initialized:
+                base += f", adsb={self.adsb_hex}"
+            base += ")"
+            return base
         return f"Track(id={self.track_id}, N=0)"
 
 
@@ -207,11 +273,21 @@ def load_tracks(jsonl_path, min_detections=10):
             # Parse detections
             detections = []
             for det_dict in event.get('detections', []):
+                # Parse ADS-B data if present
+                adsb = None
+                if 'adsb' in det_dict:
+                    adsb_data = det_dict['adsb']
+                    # Validate ADS-B data before using it
+                    if validate_adsb_data(adsb_data):
+                        adsb = adsb_data
+                    # If validation fails, adsb remains None (silently ignore invalid data)
+
                 det = Detection(
                     timestamp=det_dict['timestamp'],
                     delay=det_dict['delay'],
                     doppler=det_dict['doppler'],
-                    snr=det_dict['snr']
+                    snr=det_dict['snr'],
+                    adsb=adsb  # Pass validated ADS-B or None
                 )
                 detections.append(det)
 
