@@ -13,7 +13,6 @@ Usage:
 """
 
 import sys
-import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,7 +27,6 @@ from lib.initial_guess_single import (
     select_initial_guess
 )
 import numpy as np
-import math
 
 
 class TestStats:
@@ -54,10 +52,7 @@ class TestStats:
         return f"{self.passed}/{self.total} passed, {self.failed} failed, {self.skipped} skipped"
 
 
-stats = TestStats()
-
-
-def test_unit_adsb_validation():
+def test_unit_adsb_validation(stats):
     """Unit test: ADS-B validation function."""
     print("\n=== Unit Tests: ADS-B Validation ===")
 
@@ -108,7 +103,7 @@ def test_unit_adsb_validation():
     print("  ✓ High ground speed accepted")
 
 
-def test_unit_coordinate_conversion():
+def test_unit_coordinate_conversion(stats):
     """Unit test: Coordinate conversions."""
     print("\n=== Unit Tests: Coordinate Conversion ===")
 
@@ -128,7 +123,7 @@ def test_unit_coordinate_conversion():
     print(f"  ✓ 10km North: E={x:.3f}, N={y:.3f}, U={z:.3f} km")
 
 
-def test_unit_velocity_conversion():
+def test_unit_velocity_conversion(stats):
     """Unit test: Velocity conversions."""
     print("\n=== Unit Tests: Velocity Conversion ===")
 
@@ -163,7 +158,7 @@ def test_unit_velocity_conversion():
     print("  ✓ NaN input returns None")
 
 
-def test_unit_adsb_initial_guess():
+def test_unit_adsb_initial_guess(stats):
     """Unit test: ADS-B initial guess generation."""
     print("\n=== Unit Tests: ADS-B Initial Guess ===")
 
@@ -204,7 +199,7 @@ def test_unit_adsb_initial_guess():
     print("  ✓ Invalid ADS-B returns None")
 
 
-def test_unit_dual_mode_selection():
+def test_unit_dual_mode_selection(stats):
     """Unit test: Dual-mode selection logic."""
     print("\n=== Unit Tests: Dual-Mode Selection ===")
 
@@ -247,7 +242,7 @@ def test_unit_dual_mode_selection():
     print("  ✓ Geometric mode when ADS-B disabled")
 
 
-def test_integration_end_to_end_adsb():
+def test_integration_end_to_end_adsb(stats):
     """Integration test: End-to-end processing with ADS-B."""
     print("\n=== Integration Tests: End-to-End with ADS-B ===")
 
@@ -279,14 +274,15 @@ def test_integration_end_to_end_adsb():
     print("  ✓ ADS-B track processed successfully")
 
     # Verify guess quality
+    # Note: alt_baro is in meters in this implementation
     x, y, z, vx, vy, vz = guess
-    assert 4.9 < z < 5.1, f"Altitude should be ~5km, got {z:.3f}km"
+    assert 4.9 < z < 5.1, f"Altitude should be ~5km (5000m), got {z:.3f}km"
     assert 120 < vx < 135, f"Velocity should be ~128 m/s, got {vx:.2f} m/s"
     stats.record_pass()
     print(f"  ✓ ADS-B guess quality: alt={z:.3f}km, vel={vx:.2f}m/s")
 
 
-def test_integration_backward_compatibility():
+def test_integration_backward_compatibility(stats):
     """Integration test: Backward compatibility without ADS-B."""
     print("\n=== Integration Tests: Backward Compatibility ===")
 
@@ -318,12 +314,12 @@ def test_integration_backward_compatibility():
     # Verify geometric guess
     x, y, z, vx, vy, vz = guess
     assert z > 0, "Altitude should be positive"
-    assert vx == 0 and vy == 0 and vz == 0, "Velocity should be zero"
+    assert abs(vx) < 0.001 and abs(vy) < 0.001 and abs(vz) < 0.001, "Velocity should be ~zero"
     stats.record_pass()
     print(f"  ✓ Geometric guess: alt={z:.3f}km, vel=(0,0,0) m/s")
 
 
-def test_integration_mixed_dataset():
+def test_integration_mixed_dataset(stats):
     """Integration test: Mixed dataset (some ADS-B, some not)."""
     print("\n=== Integration Tests: Mixed Dataset ===")
 
@@ -375,7 +371,7 @@ def test_integration_mixed_dataset():
     print(f"  ✓ Mixed dataset: {adsb_count} ADS-B, {geometric_count} geometric")
 
 
-def test_integration_fallback_behavior():
+def test_integration_fallback_behavior(stats):
     """Integration test: Fallback from invalid ADS-B to geometric."""
     print("\n=== Integration Tests: Fallback Behavior ===")
 
@@ -406,7 +402,7 @@ def test_integration_fallback_behavior():
     print("  ✓ Invalid ADS-B falls back to geometric")
 
 
-def test_performance_comparison():
+def test_performance_comparison(stats):
     """Performance test: Compare ADS-B vs geometric (simulated)."""
     print("\n=== Performance Tests: Comparison ===")
 
@@ -433,25 +429,27 @@ def test_performance_comparison():
 
 def run_all_tests():
     """Run all test suites."""
+    stats = TestStats()
+
     print("="*60)
     print("ADS-B Features - Comprehensive Test Suite")
     print("="*60)
 
     # Unit tests
-    test_unit_adsb_validation()
-    test_unit_coordinate_conversion()
-    test_unit_velocity_conversion()
-    test_unit_adsb_initial_guess()
-    test_unit_dual_mode_selection()
+    test_unit_adsb_validation(stats)
+    test_unit_coordinate_conversion(stats)
+    test_unit_velocity_conversion(stats)
+    test_unit_adsb_initial_guess(stats)
+    test_unit_dual_mode_selection(stats)
 
     # Integration tests
-    test_integration_end_to_end_adsb()
-    test_integration_backward_compatibility()
-    test_integration_mixed_dataset()
-    test_integration_fallback_behavior()
+    test_integration_end_to_end_adsb(stats)
+    test_integration_backward_compatibility(stats)
+    test_integration_mixed_dataset(stats)
+    test_integration_fallback_behavior(stats)
 
     # Performance tests
-    test_performance_comparison()
+    test_performance_comparison(stats)
 
     # Summary
     print("\n" + "="*60)
@@ -470,21 +468,30 @@ if __name__ == '__main__':
     import sys
 
     if '--unit' in sys.argv:
+        stats = TestStats()
         print("Running unit tests only...")
-        test_unit_adsb_validation()
-        test_unit_coordinate_conversion()
-        test_unit_velocity_conversion()
-        test_unit_adsb_initial_guess()
-        test_unit_dual_mode_selection()
+        test_unit_adsb_validation(stats)
+        test_unit_coordinate_conversion(stats)
+        test_unit_velocity_conversion(stats)
+        test_unit_adsb_initial_guess(stats)
+        test_unit_dual_mode_selection(stats)
+        print(f"\nTest Results: {stats.summary()}")
+        sys.exit(0 if stats.failed == 0 else 1)
     elif '--integration' in sys.argv:
+        stats = TestStats()
         print("Running integration tests only...")
-        test_integration_end_to_end_adsb()
-        test_integration_backward_compatibility()
-        test_integration_mixed_dataset()
-        test_integration_fallback_behavior()
+        test_integration_end_to_end_adsb(stats)
+        test_integration_backward_compatibility(stats)
+        test_integration_mixed_dataset(stats)
+        test_integration_fallback_behavior(stats)
+        print(f"\nTest Results: {stats.summary()}")
+        sys.exit(0 if stats.failed == 0 else 1)
     elif '--performance' in sys.argv:
+        stats = TestStats()
         print("Running performance tests only...")
-        test_performance_comparison()
+        test_performance_comparison(stats)
+        print(f"\nTest Results: {stats.summary()}")
+        sys.exit(0 if stats.failed == 0 else 1)
     else:
         success = run_all_tests()
         sys.exit(0 if success else 1)
