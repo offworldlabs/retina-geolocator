@@ -23,6 +23,11 @@ solver:
   # Initial guess parameters
   initial_altitude_m: 1000     # Default altitude for initial guess (meters ASL)
 
+  # ADS-B assisted initial guess (requires retina-tracker with ADS-B)
+  use_adsb_initial_guess: true        # Enable ADS-B-based initial guess when available
+  adsb_fallback_to_geometric: true    # Fallback to geometric if ADS-B unavailable/fails
+  validate_against_adsb: true         # Include ADS-B comparison metrics in output
+
   # LM solver settings
   ftol: 1.0e-8                 # Function tolerance
   xtol: 1.0e-8                 # Parameter tolerance

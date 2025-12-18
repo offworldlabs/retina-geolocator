@@ -69,6 +69,13 @@ class GeolocatorConfig:
         self.max_detections = solver.get('max_detections', 20)
         self.temporal_continuity = solver.get('temporal_continuity', True)
         self.initial_altitude_m = solver.get('initial_altitude_m', 1000)
+
+        self.use_adsb_initial_guess = solver.get('use_adsb_initial_guess', True)
+        self.adsb_fallback_to_geometric = solver.get('adsb_fallback_to_geometric', True)
+        self.validate_against_adsb = solver.get('validate_against_adsb', True)
+
+        self._validate_adsb_config()
+
         self.ftol = solver.get('ftol', 1.0e-8)
         self.xtol = solver.get('xtol', 1.0e-8)
         self.max_iterations = solver.get('max_iterations', 1000)
@@ -89,9 +96,27 @@ class GeolocatorConfig:
         self.plot_output_dir = plotting.get('output_dir', 'data/plots')
         self.plot_dpi = plotting.get('dpi', 150)
 
+    def _validate_adsb_config(self):
+        """Validate ADS-B configuration values."""
+        if not isinstance(self.use_adsb_initial_guess, bool):
+            raise ValueError(
+                f"use_adsb_initial_guess must be boolean, got {type(self.use_adsb_initial_guess).__name__}"
+            )
+
+        if not isinstance(self.adsb_fallback_to_geometric, bool):
+            raise ValueError(
+                f"adsb_fallback_to_geometric must be boolean, got {type(self.adsb_fallback_to_geometric).__name__}"
+            )
+
+        if not isinstance(self.validate_against_adsb, bool):
+            raise ValueError(
+                f"validate_against_adsb must be boolean, got {type(self.validate_against_adsb).__name__}"
+            )
+
     def __repr__(self):
         return (f"GeolocatorConfig(beamwidth={self.beamwidth_deg}°, "
-                f"min_det={self.min_detections}, temporal={self.temporal_continuity})")
+                f"min_det={self.min_detections}, temporal={self.temporal_continuity}, "
+                f"adsb={self.use_adsb_initial_guess})")
 
 
 def load_geolocator_config(config_path='geolocator_config.yml'):
