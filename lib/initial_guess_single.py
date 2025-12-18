@@ -257,6 +257,53 @@ def generate_adsb_initial_guess(track, rx_lla, config):
     return [x, y, z, vx, vy, vz]
 
 
+def select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla):
+    """
+    Route to appropriate initial guess generator based on data availability.
+
+    Tries ADS-B initial guess first (if enabled and available), then falls back
+    to geometric guess if needed. This provides the best initial guess available
+    while maintaining backward compatibility.
+
+    Args:
+        track: Track object with detections
+        tx_enu: (east, north, up) position of TX in km
+        boresight_vector: Unit vector in boresight direction
+        frequency: TX frequency in Hz
+        config: GeolocatorConfig object (may not have ADS-B fields yet)
+        rx_lla: Tuple of (latitude, longitude, altitude) for receiver
+
+    Returns:
+        Tuple of (initial_state, source) where:
+            - initial_state: [x0, y0, z0, vx, vy, vz] in km and m/s
+            - source: "adsb" or "geometric"
+
+    Raises:
+        ValueError: If ADS-B guess fails and fallback is disabled
+    """
+    # Get config options with defaults (for backward compatibility before issue #5)
+    use_adsb = getattr(config, 'use_adsb_initial_guess', True)
+    adsb_fallback = getattr(config, 'adsb_fallback_to_geometric', True)
+
+    # Try ADS-B if enabled and data available
+    if use_adsb and track.adsb_initialized:
+        guess = generate_adsb_initial_guess(track, rx_lla, config)
+
+        if guess is not None:
+            return guess, "adsb"
+
+        # ADS-B guess failed
+        if not adsb_fallback:
+            raise ValueError(
+                f"ADS-B initial guess failed for track {track.track_id}, "
+                "fallback to geometric disabled"
+            )
+
+    # Geometric guess (current method)
+    guess = generate_initial_guess(track, tx_enu, boresight_vector, frequency)
+    return guess, "geometric"
+
+
 def generate_multi_start_guesses(track, tx_enu, boresight_vector, frequency, n_starts=5):
     """
     Generate multiple initial guesses for multi-start optimization.
