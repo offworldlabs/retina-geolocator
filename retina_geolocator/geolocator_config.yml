@@ -48,7 +48,7 @@ solver:
 # Priority order: primary → fallback → error
 radar_config:
   primary: /opt/blah2/config/config.yml      # Production system path
-  fallback: data/config/radar_config.yml     # Local copy if primary unavailable
+  fallback: radar_config.yml                 # Local fallback (bundled with geolocator)
 
   # If both fail, solver will error and instruct user to:
   # 1. Copy system config.yml to data/config/radar_config.yml, or

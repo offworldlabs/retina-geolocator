@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Test ADS-B metadata parsing."""
 
-import sys
 import json
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-
-from config_loader import Detection, Track, validate_adsb_data, load_tracks
+from retina_geolocator.config_loader import Detection, Track, validate_adsb_data, load_tracks
 
 def test_validate_adsb_data():
     """Test ADS-B validation function."""

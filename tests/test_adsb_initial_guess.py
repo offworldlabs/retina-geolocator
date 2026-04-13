@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """Test ADS-B initial guess generator."""
 
-import sys
 import math
-from pathlib import Path
 
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-
-from lib.config_loader import Detection, Track
-from lib.initial_guess_single import (
+from retina_geolocator.config_loader import Detection, Track
+from retina_geolocator.initial_guess_single import (
     lla_to_enu_km,
     adsb_velocity_to_enu,
     generate_adsb_initial_guess

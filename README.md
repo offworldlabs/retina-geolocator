@@ -1,14 +1,51 @@
 # Retina Geolocator
 
-Single-node passive radar geolocation using bistatic delay/Doppler measurements with antenna beam constraints and temporal diversity.
+Single-node and multi-node passive radar geolocation using bistatic delay/Doppler measurements with antenna beam constraints and temporal diversity.
 
 ## Overview
 
-This package implements geolocation for a **single-node passive radar system**. Unlike multi-sensor systems that require 3+ simultaneous detections from different sensors, this solver uses:
-- **Temporal diversity**: Multiple detections over time from one sensor
+This package implements geolocation for passive radar systems:
+
+- **Single-node solver**: Uses temporal diversity — multiple detections over time from one receiver
+- **Multi-node solver**: Combines simultaneous delay/Doppler measurements from multiple receivers
 - **Bistatic measurements**: Delay (range) and Doppler (velocity)
 - **Antenna constraints**: Directional Yagi antenna beam pattern
 - **Motion model**: Constant velocity trajectory fitting
+
+## Installation
+
+```bash
+# From source (editable / development)
+pip install -e ".[dev]"
+
+# Or as a dependency in another project
+pip install .
+```
+
+### Dependencies
+
+- Python 3.10+
+- NumPy >= 2.0
+- SciPy >= 1.14
+- PyYAML >= 6.0
+
+## Quick Start
+
+```python
+from retina_geolocator import (
+    solve_track, solve_track_2d, solve_multinode,
+    Geometry, Detection, Track,
+    load_config, load_geolocator_config,
+    generate_initial_guess, select_initial_guess,
+)
+```
+
+### Running Tests
+
+```bash
+pip install -e ".[dev]"
+pytest -v
+```
 
 ## ADS-B Features
 
@@ -44,11 +81,8 @@ solver:
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy your radar system config (if not in /opt/blah2/config/)
-cp /path/to/your/config.yml data/config/radar_config.yml
+# Install
+pip install -e ".[dev]"
 
 # Process tracks with 3D solver
 python scripts/process_tracks_3d.py data/input/tracks.jsonl
@@ -78,11 +112,10 @@ python scripts/process_tracks_3d.py data/input/tracks_with_adsb.jsonl
 - **Baseline**: TX-RX separation (typically 10-50 km)
 
 ### Software Dependencies
-- Python 3.7+
-- NumPy >= 1.20.0
-- SciPy >= 1.7.0
-- PyYAML >= 5.4.0
-- Matplotlib >= 3.3.0 (for plotting)
+- Python 3.10+
+- NumPy >= 2.0
+- SciPy >= 1.14
+- PyYAML >= 6.0
 
 ## Configuration
 

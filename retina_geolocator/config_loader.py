@@ -3,6 +3,7 @@ Configuration and data loader for single-node passive radar.
 Loads radar system config (config.yml) and geolocator config (geolocator_config.yml).
 """
 
+import os
 import yaml
 import json
 import math
@@ -119,16 +120,19 @@ class GeolocatorConfig:
                 f"adsb={self.use_adsb_initial_guess})")
 
 
-def load_geolocator_config(config_path='geolocator_config.yml'):
+def load_geolocator_config(config_path=None):
     """
     Load geolocator-specific configuration.
 
     Args:
-        config_path: Path to geolocator_config.yml
+        config_path: Path to geolocator_config.yml.
+                     Defaults to the bundled config inside the package.
 
     Returns:
         GeolocatorConfig object
     """
+    if config_path is None:
+        config_path = os.path.join(os.path.dirname(__file__), 'geolocator_config.yml')
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     return GeolocatorConfig(config_dict)

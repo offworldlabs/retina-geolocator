@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """Test enhanced output metadata."""
 
-import sys
 import json
 import tempfile
-from pathlib import Path
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
-
-from lib.config_loader import Detection, Track
-from lib.initial_guess_single import generate_initial_guess, generate_adsb_initial_guess
+from retina_geolocator.config_loader import Detection, Track
+from retina_geolocator.initial_guess_single import generate_initial_guess, generate_adsb_initial_guess
 
 
 def test_output_structure():

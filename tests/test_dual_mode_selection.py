@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """Test dual-mode initial guess selection."""
 
-import sys
-from pathlib import Path
-
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-
-from lib.config_loader import Detection, Track
-from lib.initial_guess_single import select_initial_guess
 import numpy as np
+
+from retina_geolocator.config_loader import Detection, Track
+from retina_geolocator.initial_guess_single import select_initial_guess
 
 
 class MockConfig:

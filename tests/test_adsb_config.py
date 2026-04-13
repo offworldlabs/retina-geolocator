@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """Test ADS-B configuration options."""
 
-import sys
+import os
 import yaml
 import tempfile
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-
-from config_loader import GeolocatorConfig, load_geolocator_config
+from retina_geolocator.config_loader import GeolocatorConfig, load_geolocator_config
 
 
 def test_default_config():
     """Test that default configuration includes ADS-B options."""
     print("Testing default configuration...")
 
-    config = load_geolocator_config('geolocator_config.yml')
+    config = load_geolocator_config()
 
     assert hasattr(config, 'use_adsb_initial_guess'), "Missing use_adsb_initial_guess"
     assert hasattr(config, 'adsb_fallback_to_geometric'), "Missing adsb_fallback_to_geometric"
@@ -182,7 +179,7 @@ solver:
         print(f"  {config}")
         print("  ✓ YAML loading verified")
     finally:
-        Path(temp_path).unlink()
+        os.unlink(temp_path)
 
 
 def test_repr_includes_adsb():

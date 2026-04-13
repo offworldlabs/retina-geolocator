@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "retina-geolocator"
+version = "0.1.0"
+description = "Bistatic passive radar geolocation solver — single-node and multi-node"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["retina_geolocator*"]
+
+[tool.setuptools.package-data]
+retina_geolocator = ["*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

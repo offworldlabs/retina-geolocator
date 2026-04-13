@@ -12,24 +12,20 @@ Usage:
     python test_adsb_features.py --performance # Run only performance tests
 """
 
-import sys
-from pathlib import Path
+import numpy as np
+import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
-
-from lib.config_loader import Detection, Track, validate_adsb_data, GeolocatorConfig
-from lib.initial_guess_single import (
+from retina_geolocator.config_loader import Detection, Track, validate_adsb_data, GeolocatorConfig
+from retina_geolocator.initial_guess_single import (
     lla_to_enu_km,
     adsb_velocity_to_enu,
     generate_adsb_initial_guess,
     generate_initial_guess,
     select_initial_guess
 )
-import numpy as np
 
 
-class TestStats:
+class _Stats:
     """Track test statistics."""
     def __init__(self):
         self.total = 0
@@ -50,6 +46,11 @@ class TestStats:
 
     def summary(self):
         return f"{self.passed}/{self.total} passed, {self.failed} failed, {self.skipped} skipped"
+
+
+@pytest.fixture
+def stats():
+    return _Stats()
 
 
 def test_unit_adsb_validation(stats):
