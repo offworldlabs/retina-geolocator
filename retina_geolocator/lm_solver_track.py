@@ -121,6 +121,17 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     bounds_lower = [x0 - pos_range, y0 - pos_range, min_z_enu_km, -300, -300, -100]
     bounds_upper = [x0 + pos_range, y0 + pos_range, 15.0, 300, 300, 100]
 
+    # Clamp initial state so scipy doesn't raise ValueError when velocity
+    # exceeds bounds (e.g. 650-knot aircraft in a jet stream = 334 m/s > 300).
+    initial_state = [
+        max(bounds_lower[0], min(bounds_upper[0], initial_state[0])),
+        max(bounds_lower[1], min(bounds_upper[1], initial_state[1])),
+        max(bounds_lower[2], min(bounds_upper[2], initial_state[2])),
+        max(bounds_lower[3], min(bounds_upper[3], initial_state[3])),
+        max(bounds_lower[4], min(bounds_upper[4], initial_state[4])),
+        max(bounds_lower[5], min(bounds_upper[5], initial_state[5])),
+    ]
+
     # --- Pre-extract detection arrays ONCE (never re-allocated per nfev) ---
     dets = track.detections
     N = len(dets)
