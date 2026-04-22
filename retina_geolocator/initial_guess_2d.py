@@ -139,7 +139,7 @@ if __name__ == "__main__":
     guess = generate_initial_guess_2d(track, tx_enu, geometry['antenna_boresight'],
                                        config.frequency, altitude_fixed_m=1000)
 
-    print(f"Initial guess:")
+    print("Initial guess:")
     print(f"  Range: {guess[0]:.2f} km")
     print(f"  Azimuth: {guess[1]:.1f}°")
     print(f"  Radial velocity: {guess[2]:.1f} m/s")

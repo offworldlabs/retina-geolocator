@@ -127,7 +127,7 @@ if __name__ == "__main__":
                                    rx_lla[0], rx_lla[1], rx_lla[2])
     tx_enu = tuple(x / 1000 for x in tx_enu_m)  # Convert m to km
 
-    print(f"RX at origin: (0, 0, 0) km")
+    print("RX at origin: (0, 0, 0) km")
     print(f"TX at: ({tx_enu[0]:.2f}, {tx_enu[1]:.2f}, {tx_enu[2]:.2f}) km")
     print()
 

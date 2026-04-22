@@ -1,6 +1,5 @@
 """Unit tests for the multi-node geolocation solver."""
 
-import math
 import numpy as np
 import pytest
 

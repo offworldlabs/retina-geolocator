@@ -19,7 +19,7 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from .bistatic_models import bistatic_delay, bistatic_doppler
-from .baseline_geometry import calculate_target_azimuth, antenna_gain_pattern
+from .baseline_geometry import antenna_gain_pattern
 
 
 def state_to_cartesian_enu(range_km, azimuth_deg, altitude_m, rx_alt_m):
@@ -199,7 +199,7 @@ def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency,
     success = result.success
 
     # Calculate RMS errors (4 residuals per detection: delay, doppler, antenna, altitude)
-    n_det = len(track.detections)
+    len(track.detections)
     delay_residuals = residuals[0::4]  # Every 4th starting from 0
     doppler_residuals = residuals[1::4]  # Every 4th starting from 1
 

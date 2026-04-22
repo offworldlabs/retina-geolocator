@@ -18,29 +18,29 @@ def test_validate_adsb_data():
         'gs': 250,
         'track': 45
     }
-    assert validate_adsb_data(valid) == True, "Valid ADS-B should pass"
+    assert validate_adsb_data(valid), "Valid ADS-B should pass"
 
     # Invalid: latitude out of range
     invalid_lat = valid.copy()
     invalid_lat['lat'] = 95
-    assert validate_adsb_data(invalid_lat) == False, "Lat > 90 should fail"
+    assert not validate_adsb_data(invalid_lat), "Lat > 90 should fail"
 
     # Invalid: NaN
     import math
     invalid_nan = valid.copy()
     invalid_nan['lat'] = math.nan
-    assert validate_adsb_data(invalid_nan) == False, "NaN should fail"
+    assert not validate_adsb_data(invalid_nan), "NaN should fail"
 
     # Missing required field
     invalid_missing = {'lat': 37.0}
-    assert validate_adsb_data(invalid_missing) == False, "Missing lon should fail"
+    assert not validate_adsb_data(invalid_missing), "Missing lon should fail"
 
     # Not a dict
-    assert validate_adsb_data("not a dict") == False, "Non-dict should fail"
+    assert not validate_adsb_data("not a dict"), "Non-dict should fail"
 
     # Valid with minimal fields
     minimal = {'lat': 37.0, 'lon': -122.0}
-    assert validate_adsb_data(minimal) == True, "Minimal valid should pass"
+    assert validate_adsb_data(minimal), "Minimal valid should pass"
 
     print("  ✓ All validation tests passed")
 
@@ -69,7 +69,7 @@ def test_track_with_adsb():
     det = Detection(1234567890000, 16.1, 134.5, 18.2)
     track1 = Track("250618-000000", [det])
     assert track1.adsb_hex is None, "Track without ADS-B should have adsb_hex=None"
-    assert track1.adsb_initialized == False, "Track without ADS-B should have adsb_initialized=False"
+    assert not track1.adsb_initialized, "Track without ADS-B should have adsb_initialized=False"
     print(f"  Without ADS-B: {track1}")
 
     # With ADS-B
@@ -80,7 +80,7 @@ def test_track_with_adsb():
     }
     track2 = Track("250618-A12345", [det], event_data)
     assert track2.adsb_hex == 'a12345', "Track should parse adsb_hex"
-    assert track2.adsb_initialized == True, "Track should parse adsb_initialized"
+    assert track2.adsb_initialized, "Track should parse adsb_initialized"
     print(f"  With ADS-B: {track2}")
 
     print("  ✓ Track tests passed")
@@ -139,7 +139,7 @@ def test_load_tracks_with_adsb():
 
     track = tracks[0]
     assert track.adsb_hex == 'a12345', "Should parse adsb_hex"
-    assert track.adsb_initialized == True, "Should parse adsb_initialized"
+    assert track.adsb_initialized, "Should parse adsb_initialized"
 
     # Check detections
     assert len(track.detections) == 3, "Should have 3 detections"
@@ -190,7 +190,7 @@ def test_backward_compatibility():
 
     track = tracks[0]
     assert track.adsb_hex is None, "Track without ADS-B should have adsb_hex=None"
-    assert track.adsb_initialized == False, "Track without ADS-B should have adsb_initialized=False"
+    assert not track.adsb_initialized, "Track without ADS-B should have adsb_initialized=False"
     assert all(det.adsb is None for det in track.detections), "All detections should have adsb=None"
 
     print(f"  Loaded: {track}")

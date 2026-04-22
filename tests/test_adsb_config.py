@@ -2,7 +2,6 @@
 """Test ADS-B configuration options."""
 
 import os
-import yaml
 import tempfile
 
 from retina_geolocator.config_loader import GeolocatorConfig, load_geolocator_config
@@ -18,9 +17,9 @@ def test_default_config():
     assert hasattr(config, 'adsb_fallback_to_geometric'), "Missing adsb_fallback_to_geometric"
     assert hasattr(config, 'validate_against_adsb'), "Missing validate_against_adsb"
 
-    assert config.use_adsb_initial_guess == True, "Default use_adsb should be True"
-    assert config.adsb_fallback_to_geometric == True, "Default fallback should be True"
-    assert config.validate_against_adsb == True, "Default validate should be True"
+    assert config.use_adsb_initial_guess, "Default use_adsb should be True"
+    assert config.adsb_fallback_to_geometric, "Default fallback should be True"
+    assert config.validate_against_adsb, "Default validate should be True"
 
     print(f"  {config}")
     print("  ✓ Default config loaded correctly")
@@ -40,9 +39,9 @@ def test_custom_config():
 
     config = GeolocatorConfig(config_dict)
 
-    assert config.use_adsb_initial_guess == False
-    assert config.adsb_fallback_to_geometric == False
-    assert config.validate_against_adsb == False
+    assert not config.use_adsb_initial_guess
+    assert not config.adsb_fallback_to_geometric
+    assert not config.validate_against_adsb
 
     print(f"  {config}")
     print("  ✓ Custom values parsed correctly")
@@ -61,9 +60,9 @@ def test_backward_compatibility():
 
     config = GeolocatorConfig(config_dict)
 
-    assert config.use_adsb_initial_guess == True, "Should default to True"
-    assert config.adsb_fallback_to_geometric == True, "Should default to True"
-    assert config.validate_against_adsb == True, "Should default to True"
+    assert config.use_adsb_initial_guess, "Should default to True"
+    assert config.adsb_fallback_to_geometric, "Should default to True"
+    assert config.validate_against_adsb, "Should default to True"
 
     print(f"  {config}")
     print("  ✓ Backward compatibility verified")
@@ -80,7 +79,7 @@ def test_invalid_type_use_adsb():
     }
 
     try:
-        config = GeolocatorConfig(config_dict)
+        GeolocatorConfig(config_dict)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "use_adsb_initial_guess must be boolean" in str(e)
@@ -98,7 +97,7 @@ def test_invalid_type_fallback():
     }
 
     try:
-        config = GeolocatorConfig(config_dict)
+        GeolocatorConfig(config_dict)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "adsb_fallback_to_geometric must be boolean" in str(e)
@@ -116,7 +115,7 @@ def test_invalid_type_validate():
     }
 
     try:
-        config = GeolocatorConfig(config_dict)
+        GeolocatorConfig(config_dict)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "validate_against_adsb must be boolean" in str(e)
@@ -172,9 +171,9 @@ solver:
     try:
         config = load_geolocator_config(temp_path)
 
-        assert config.use_adsb_initial_guess == True
-        assert config.adsb_fallback_to_geometric == False
-        assert config.validate_against_adsb == True
+        assert config.use_adsb_initial_guess
+        assert not config.adsb_fallback_to_geometric
+        assert config.validate_against_adsb
 
         print(f"  {config}")
         print("  ✓ YAML loading verified")

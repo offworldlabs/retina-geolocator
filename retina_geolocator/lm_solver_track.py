@@ -34,8 +34,12 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     pz = z0 + vz_km * dt
 
     # Bistatic delay  (vectorised)
-    dx_tx = px - tx[0]; dy_tx = py - tx[1]; dz_tx = pz - tx[2]
-    dx_rx = rx[0] - px; dy_rx = rx[1] - py; dz_rx = rx[2] - pz
+    dx_tx = px - tx[0]
+    dy_tx = py - tx[1]
+    dz_tx = pz - tx[2]
+    dx_rx = rx[0] - px
+    dy_rx = rx[1] - py
+    dz_rx = rx[2] - pz
     dist_tx_t = np.sqrt(dx_tx*dx_tx + dy_tx*dy_tx + dz_tx*dz_tx)
     dist_t_rx = np.sqrt(dx_rx*dx_rx + dy_rx*dy_rx + dz_rx*dz_rx)
     delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.3  # µs
@@ -44,8 +48,12 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     inv_tx = 1.0 / dist_tx_t
     inv_rx = 1.0 / dist_t_rx
     # unit vector components  target→TX  and  target→RX
-    u_tx_x = dx_tx * inv_tx; u_tx_y = dy_tx * inv_tx; u_tx_z = dz_tx * inv_tx
-    u_rx_x = dx_rx * inv_rx; u_rx_y = dy_rx * inv_rx; u_rx_z = dz_rx * inv_rx
+    u_tx_x = dx_tx * inv_tx
+    u_tx_y = dy_tx * inv_tx
+    u_tx_z = dz_tx * inv_tx
+    u_rx_x = dx_rx * inv_rx
+    u_rx_y = dy_rx * inv_rx
+    u_rx_z = dz_rx * inv_rx
     v_radial = (u_tx_x + u_rx_x) * vx_km + (u_tx_y + u_rx_y) * vy_km + (u_tx_z + u_rx_z) * vz_km
     doppler_pred = f_over_c * v_radial
 
@@ -234,15 +242,15 @@ if __name__ == "__main__":
         initial_guess = generate_initial_guess(
             track, tx_enu, geometry['antenna_boresight_vector'], config.frequency
         )
-        print(f"\nInitial guess:")
+        print("\nInitial guess:")
         print(f"  Position: ({initial_guess[0]:.2f}, {initial_guess[1]:.2f}, {initial_guess[2]:.2f}) km")
         print(f"  Velocity: ({initial_guess[3]:.1f}, {initial_guess[4]:.1f}, {initial_guess[5]:.1f}) m/s")
 
         # Solve
-        print(f"\nSolving...")
+        print("\nSolving...")
         solution = solve_track(track, initial_guess, tx_enu, rx_enu, config.frequency)
 
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  Success: {solution['success']}")
         print(f"  Message: {solution['message']}")
         print(f"  Function evaluations: {solution['nfev']}")

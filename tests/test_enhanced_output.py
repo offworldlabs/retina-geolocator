@@ -2,7 +2,6 @@
 """Test enhanced output metadata."""
 
 import json
-import tempfile
 import numpy as np
 
 from retina_geolocator.config_loader import Detection, Track
@@ -335,13 +334,13 @@ def test_adsb_conditional_fields():
     det = Detection(1718747745000, 16.1, 134.5, 18.2)
     track_with_adsb = Track("250618-A12345", [det], event_data_with_adsb)
 
-    assert track_with_adsb.adsb_initialized == True
+    assert track_with_adsb.adsb_initialized
     assert track_with_adsb.adsb_hex == 'a12345'
 
     # Track without ADS-B
     track_without_adsb = Track("250618-000001", [det])
 
-    assert track_without_adsb.adsb_initialized == False
+    assert not track_without_adsb.adsb_initialized
     assert track_without_adsb.adsb_hex is None
 
     print("  ✓ ADS-B fields properly conditional based on track.adsb_initialized")

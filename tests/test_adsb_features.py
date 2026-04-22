@@ -15,12 +15,11 @@ Usage:
 import numpy as np
 import pytest
 
-from retina_geolocator.config_loader import Detection, Track, validate_adsb_data, GeolocatorConfig
+from retina_geolocator.config_loader import Detection, Track, validate_adsb_data
 from retina_geolocator.initial_guess_single import (
     lla_to_enu_km,
     adsb_velocity_to_enu,
     generate_adsb_initial_guess,
-    generate_initial_guess,
     select_initial_guess
 )
 
@@ -59,47 +58,47 @@ def test_unit_adsb_validation(stats):
 
     # Valid ADS-B
     valid = {'lat': 37.7749, 'lon': -122.4194, 'alt_baro': 5000}
-    assert validate_adsb_data(valid) == True
+    assert validate_adsb_data(valid)
     stats.record_pass()
     print("  ✓ Valid ADS-B data accepted")
 
     # Invalid: lat out of range
     invalid_lat = {'lat': 95, 'lon': -122.0}
-    assert validate_adsb_data(invalid_lat) == False
+    assert not validate_adsb_data(invalid_lat)
     stats.record_pass()
     print("  ✓ Invalid latitude rejected")
 
     # Invalid: NaN
     invalid_nan = {'lat': float('nan'), 'lon': -122.0}
-    assert validate_adsb_data(invalid_nan) == False
+    assert not validate_adsb_data(invalid_nan)
     stats.record_pass()
     print("  ✓ NaN latitude rejected")
 
     # Invalid: missing required field
     invalid_missing = {'lat': 37.0}
-    assert validate_adsb_data(invalid_missing) == False
+    assert not validate_adsb_data(invalid_missing)
     stats.record_pass()
     print("  ✓ Missing longitude rejected")
 
     # Invalid: not a dict
-    assert validate_adsb_data("not a dict") == False
+    assert not validate_adsb_data("not a dict")
     stats.record_pass()
     print("  ✓ Non-dict rejected")
 
     # Edge case: altitude extremes
     high_alt = {'lat': 37.0, 'lon': -122.0, 'alt_baro': 40000}
-    assert validate_adsb_data(high_alt) == True
+    assert validate_adsb_data(high_alt)
     stats.record_pass()
     print("  ✓ High altitude accepted")
 
     low_alt = {'lat': 37.0, 'lon': -122.0, 'alt_baro': -1000}
-    assert validate_adsb_data(low_alt) == True
+    assert validate_adsb_data(low_alt)
     stats.record_pass()
     print("  ✓ Low altitude accepted")
 
     # Edge case: ground speed extremes
     high_gs = {'lat': 37.0, 'lon': -122.0, 'gs': 800}
-    assert validate_adsb_data(high_gs) == True
+    assert validate_adsb_data(high_gs)
     stats.record_pass()
     print("  ✓ High ground speed accepted")
 
@@ -180,7 +179,7 @@ def test_unit_adsb_initial_guess(stats):
     assert guess is not None
     assert len(guess) == 6
     stats.record_pass()
-    print(f"  ✓ Valid ADS-B generates 6-element guess")
+    print("  ✓ Valid ADS-B generates 6-element guess")
 
     # No ADS-B data
     det_no_adsb = Detection(1718747745000, 16.1, 134.5, 18.2)
@@ -436,7 +435,7 @@ def test_performance_comparison(stats):
 
 def run_all_tests():
     """Run all test suites."""
-    stats = TestStats()
+    stats = _Stats()
 
     print("="*60)
     print("ADS-B Features - Comprehensive Test Suite")
@@ -475,7 +474,7 @@ if __name__ == '__main__':
     import sys
 
     if '--unit' in sys.argv:
-        stats = TestStats()
+        stats = _Stats()
         print("Running unit tests only...")
         test_unit_adsb_validation(stats)
         test_unit_coordinate_conversion(stats)
@@ -485,7 +484,7 @@ if __name__ == '__main__':
         print(f"\nTest Results: {stats.summary()}")
         sys.exit(0 if stats.failed == 0 else 1)
     elif '--integration' in sys.argv:
-        stats = TestStats()
+        stats = _Stats()
         print("Running integration tests only...")
         test_integration_end_to_end_adsb(stats)
         test_integration_backward_compatibility(stats)
@@ -494,7 +493,7 @@ if __name__ == '__main__':
         print(f"\nTest Results: {stats.summary()}")
         sys.exit(0 if stats.failed == 0 else 1)
     elif '--performance' in sys.argv:
-        stats = TestStats()
+        stats = _Stats()
         print("Running performance tests only...")
         test_performance_comparison(stats)
         print(f"\nTest Results: {stats.summary()}")

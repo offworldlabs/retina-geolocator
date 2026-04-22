@@ -5,8 +5,8 @@ Uses bistatic delay ellipsoid and antenna boresight constraint.
 
 import numpy as np
 import math
-from scipy.optimize import minimize_scalar, minimize
-from .bistatic_models import bistatic_delay, bistatic_doppler
+from scipy.optimize import minimize_scalar
+from .bistatic_models import bistatic_delay
 from .Geometry import Geometry
 
 
@@ -353,7 +353,7 @@ if __name__ == "__main__":
     # Test initial guess generation
     import sys
     sys.path.append('.')
-    from config_loader import load_config, load_tracks, Detection, Track
+    from config_loader import load_config, load_tracks
     from baseline_geometry import calculate_baseline_geometry
     from Geometry import Geometry
 

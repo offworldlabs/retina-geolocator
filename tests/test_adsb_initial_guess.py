@@ -94,7 +94,7 @@ def test_adsb_velocity_to_enu():
     # Test 5: Invalid input (NaN)
     vel = adsb_velocity_to_enu(float('nan'), 0)
     assert vel is None, "NaN input should return None"
-    print(f"  NaN input returns None ✓")
+    print("  NaN input returns None ✓")
 
     print("  ✓ adsb_velocity_to_enu tests passed")
 

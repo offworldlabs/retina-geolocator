@@ -23,11 +23,9 @@ from lib import (
     Geometry,
     load_geolocator_config,
     load_config,
-    load_tracks,
     Detection,
     Track,
     calculate_baseline_geometry,
-    generate_initial_guess,
     select_initial_guess,
     solve_track
 )

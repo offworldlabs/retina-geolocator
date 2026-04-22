@@ -244,7 +244,7 @@ def test_track_not_adsb_initialized():
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should use geometric when not initialized, got {source}"
 
-    print(f"  ✓ Used geometric: track not ADS-B initialized")
+    print("  ✓ Used geometric: track not ADS-B initialized")
 
 
 if __name__ == '__main__':
