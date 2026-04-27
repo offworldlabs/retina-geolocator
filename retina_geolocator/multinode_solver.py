@@ -55,19 +55,20 @@ class MultiNodeMeasurement:
         self.snr = snr
 
 
-def _residual_function(state, node_setups, measurements):
+def _residual_function(state, node_setups, measurements, z_fixed_km):
     """Compute residuals for all measurements.
 
     Args:
-        state: [x, y, z, vx, vy, vz] — position km, velocity m/s
+        state: [x, y, vx, vy, vz] — horizontal position km, velocity m/s
         node_setups: dict[node_id] → NodeSetup
         measurements: list of MultiNodeMeasurement
+        z_fixed_km: altitude in ENU km, pinned from initial guess
 
     Returns:
-        Array of residuals (2 per measurement + altitude constraint).
+        Array of residuals (2 per measurement).
     """
-    pos = state[:3]
-    vel = state[3:6]
+    pos = np.array([state[0], state[1], z_fixed_km])
+    vel = state[2:5]
 
     residuals = []
 
@@ -84,15 +85,6 @@ def _residual_function(state, node_setups, measurements):
 
         residuals.append((m.delay_us - pred_delay) * weight)
         residuals.append((m.doppler_hz - pred_doppler) * weight * 0.1)
-
-    # Altitude constraint: penalize if below ground or above 15 km
-    alt_km = pos[2]
-    if alt_km < 0.05:
-        residuals.append((0.05 - alt_km) * 50.0)
-    elif alt_km > 15.0:
-        residuals.append((alt_km - 15.0) * 50.0)
-    else:
-        residuals.append(0.0)
 
     return np.array(residuals)
 
@@ -171,25 +163,33 @@ def solve_multinode(solver_input, node_configs):
     if len(measurements) < 2:
         return None
 
-    # Initial state: convert guess LLA to ENU km, velocity = 0
+    # Pin altitude from initial guess (the grid altitude layer that best matched
+    # the measured delays during association). With altitude fixed, the 2D
+    # position solve (x, y) becomes exactly determined by 2 bistatic delay
+    # equations — eliminating the altitude-drift ambiguity that causes 5-10 km
+    # errors in unconstrained 3D solves with only 2 nodes.
     guess_enu = _lla_to_enu_km(
         guess["lat"], guess["lon"], guess["alt_km"] * 1000,
         ref_lat, ref_lon, ref_alt_m,
     )
-    x0 = np.array([
-        guess_enu[0], guess_enu[1], guess_enu[2],
-        0.0, 0.0, 0.0,  # initial velocity guess
-    ])
+    z_fixed_km = guess_enu[2]  # altitude fixed in ENU km
 
-    # Bounds: position ±60 km from guess, altitude 0.05–15 km, velocity ±300 m/s
-    lb = [x0[0] - 60, x0[1] - 60, 0.05, -300, -300, -100]
-    ub = [x0[0] + 60, x0[1] + 60, 15.0, 300, 300, 100]
+    # State: [x, y, vx, vy, vz] — altitude removed from state vector.
+    # Initial position is the ENU origin (= the guess location by construction),
+    # so x=0, y=0 exactly. Using guess_enu[0:2] directly gives floating-point
+    # residuals ~1e-13 that make ||x0|| ≈ 0, collapsing the TRF trust region
+    # to zero and triggering immediate false-convergence on the first step.
+    x0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
+
+    # Bounds: horizontal position ±60 km from guess, velocity ±300 m/s
+    lb = [x0[0] - 60, x0[1] - 60, -300, -300, -100]
+    ub = [x0[0] + 60, x0[1] + 60,  300,  300,  100]
 
     try:
         result = least_squares(
             _residual_function,
             x0,
-            args=(node_setups, measurements),
+            args=(node_setups, measurements, z_fixed_km),
             method="trf",
             bounds=(lb, ub),
             max_nfev=200,
@@ -203,23 +203,25 @@ def solve_multinode(solver_input, node_configs):
         return None
 
     state = result.x
+    pos_sol = np.array([state[0], state[1], z_fixed_km])
+    vel_sol = state[2:5]
 
     # Compute RMS delay and doppler
     delay_residuals = []
     doppler_residuals = []
     for m in measurements:
         ns = node_setups[m.node_id]
-        pred_d = bistatic_delay(state[:3], ns.tx_enu, ns.rx_enu)
-        pred_f = bistatic_doppler(state[:3], state[3:6], ns.tx_enu, ns.rx_enu, ns.fc_hz)
+        pred_d = bistatic_delay(pos_sol, ns.tx_enu, ns.rx_enu)
+        pred_f = bistatic_doppler(pos_sol, vel_sol, ns.tx_enu, ns.rx_enu, ns.fc_hz)
         delay_residuals.append(m.delay_us - pred_d)
         doppler_residuals.append(m.doppler_hz - pred_f)
 
     rms_delay = float(np.sqrt(np.mean(np.array(delay_residuals) ** 2)))
     rms_doppler = float(np.sqrt(np.mean(np.array(doppler_residuals) ** 2)))
 
-    # Convert solution ENU back to LLA
+    # Convert solution ENU back to LLA (z is fixed)
     lat, lon, alt_m = _enu_km_to_lla(
-        state[0], state[1], state[2],
+        state[0], state[1], z_fixed_km,
         ref_lat, ref_lon, ref_alt_m,
     )
 
@@ -228,9 +230,9 @@ def solve_multinode(solver_input, node_configs):
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
-        "vel_east": float(state[3]),
-        "vel_north": float(state[4]),
-        "vel_up": float(state[5]),
+        "vel_east": float(vel_sol[0]),
+        "vel_north": float(vel_sol[1]),
+        "vel_up": float(vel_sol[2]),
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
