@@ -13,11 +13,16 @@ Each node contributes two residuals per measurement:
   - Doppler residual: measured_doppler - predicted_doppler (Hz)
 """
 
+import math
+
 import numpy as np
 from scipy.optimize import least_squares
 
 from .Geometry import Geometry
-from .bistatic_models import bistatic_delay, bistatic_doppler
+
+# Speed of light in km/µs (for delay) and km/s (for Doppler).
+_C_KM_US = 0.299792458
+_C_KM_S = 299792.458
 
 
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
@@ -40,9 +45,18 @@ class NodeSetup:
 
     def __init__(self, node_id, rx_enu_km, tx_enu_km, fc_hz):
         self.node_id = node_id
-        self.rx_enu = rx_enu_km
-        self.tx_enu = tx_enu_km
+        # Store as plain tuples so the inner loops use fast Python attribute access
+        # without numpy array creation overhead on every residual evaluation.
+        self.rx_enu = tuple(rx_enu_km)
+        self.tx_enu = tuple(tx_enu_km)
         self.fc_hz = fc_hz
+        # Pre-compute constants that are independent of the solver state.
+        rx, tx = self.rx_enu, self.tx_enu
+        self.d_baseline_km = math.sqrt(
+            (rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2
+        )
+        # fc / c  (Hz per km/s) — used for Doppler prediction.
+        self.K_doppler = fc_hz / _C_KM_S
 
 
 class MultiNodeMeasurement:
@@ -58,6 +72,10 @@ class MultiNodeMeasurement:
 def _residual_function(state, node_setups, measurements, z_fixed_km):
     """Compute residuals for all measurements.
 
+    Uses inlined bistatic geometry (math.sqrt instead of np.linalg.norm) to
+    avoid numpy array allocation overhead on every function evaluation — the
+    numerical Jacobian calls this O(iterations × n_params) times.
+
     Args:
         state: [x, y, vx, vy, vz] — horizontal position km, velocity m/s
         node_setups: dict[node_id] → NodeSetup
@@ -67,26 +85,115 @@ def _residual_function(state, node_setups, measurements, z_fixed_km):
     Returns:
         Array of residuals (2 per measurement).
     """
-    pos = np.array([state[0], state[1], z_fixed_km])
-    vel = state[2:5]
+    px = state[0]
+    py = state[1]
+    pz = z_fixed_km
+    # Velocity in km/s (bistatic Doppler model uses km/s internally).
+    vx = state[2] * 1e-3
+    vy = state[3] * 1e-3
+    vz = state[4] * 1e-3
 
     residuals = []
 
     for m in measurements:
         ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
 
-        pred_delay = bistatic_delay(pos, ns.tx_enu, ns.rx_enu)
-        pred_doppler = bistatic_doppler(pos, vel, ns.tx_enu, ns.rx_enu, ns.fc_hz)
+        # TX → target distance (km)
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        # target → RX distance (km)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+        pred_delay = (dptx + dprx - ns.d_baseline_km) / _C_KM_US
 
-        # Weight by SNR (higher SNR = tighter constraint)
-        weight = 1.0
-        if m.snr > 0:
-            weight = min(m.snr / 10.0, 3.0)
+        # Unit vectors from target toward TX and toward RX
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
 
+        # Bistatic Doppler (Hz)
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+        pred_doppler = ns.K_doppler * (v_tx + v_rx)
+
+        weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
         residuals.append((m.delay_us - pred_delay) * weight)
         residuals.append((m.doppler_hz - pred_doppler) * weight * 0.1)
 
-    return np.array(residuals)
+    return np.array(residuals, dtype=np.float64)
+
+
+def _jacobian_function(state, node_setups, measurements, z_fixed_km):
+    """Analytical Jacobian of the residuals w.r.t. state = [x, y, vx, vy, vz].
+
+    Eliminates the costly finite-difference Jacobian used by scipy TRF
+    (which calls the residual function n_params extra times per iteration).
+
+    For state [x, y, vx, vy, vz] and residuals [r_delay, r_doppler] per node:
+
+    ∂r_delay/∂x  = -w/c * ((px-tx_x)/d_tx + (px-rx_x)/d_rx)
+    ∂r_delay/∂y  = -w/c * ((py-tx_y)/d_tx + (py-rx_y)/d_rx)
+    ∂r_delay/∂v* = 0
+
+    ∂r_doppler/∂x   = -w*0.1*K * [(-vx_kms + v_tx*utx_x)/d_tx
+                                   + (-vx_kms + v_rx*urx_x)/d_rx]
+    ∂r_doppler/∂vx  = -w*0.1*K * (utx_x + urx_x) / 1000
+    (similarly for y, vy, vz)
+    """
+    px = state[0]
+    py = state[1]
+    pz = z_fixed_km
+    vx = state[2] * 1e-3
+    vy = state[3] * 1e-3
+    vz = state[4] * 1e-3
+
+    inv_C = 1.0 / _C_KM_US
+    INV1000 = 1e-3
+
+    rows = []
+    for m in measurements:
+        ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
+
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+
+        w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        K = ns.K_doppler
+
+        # ── Delay row ──────────────────────────────────────────────────────
+        dr1_dx = -w * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+        dr1_dy = -w * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+        rows.append([dr1_dx, dr1_dy, 0.0, 0.0, 0.0])
+
+        # ── Doppler row ─────────────────────────────────────────────────────
+        w01 = -w * 0.1 * K
+        dr2_dx = w01 * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
+        dr2_dy = w01 * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
+        dr2_dvx = w01 * (utx0 + urx0) * INV1000
+        dr2_dvy = w01 * (utx1 + urx1) * INV1000
+        dr2_dvz = w01 * (utx2 + urx2) * INV1000
+        rows.append([dr2_dx, dr2_dy, dr2_dvx, dr2_dvy, dr2_dvz])
+
+    return np.array(rows, dtype=np.float64)
 
 
 def solve_multinode(solver_input, node_configs):
@@ -189,6 +296,7 @@ def solve_multinode(solver_input, node_configs):
         result = least_squares(
             _residual_function,
             x0,
+            jac=_jacobian_function,
             args=(node_setups, measurements, z_fixed_km),
             method="trf",
             bounds=(lb, ub),
@@ -203,16 +311,30 @@ def solve_multinode(solver_input, node_configs):
         return None
 
     state = result.x
-    pos_sol = np.array([state[0], state[1], z_fixed_km])
-    vel_sol = state[2:5]
+    px, py = state[0], state[1]
+    pz = z_fixed_km
+    vx_kms = state[2] * 1e-3
+    vy_kms = state[3] * 1e-3
+    vz_kms = state[4] * 1e-3
 
-    # Compute RMS delay and doppler
+    # Compute RMS delay and Doppler using the same inlined geometry as the solver.
     delay_residuals = []
     doppler_residuals = []
     for m in measurements:
         ns = node_setups[m.node_id]
-        pred_d = bistatic_delay(pos_sol, ns.tx_enu, ns.rx_enu)
-        pred_f = bistatic_doppler(pos_sol, vel_sol, ns.tx_enu, ns.rx_enu, ns.fc_hz)
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+        pred_d = (dptx + dprx - ns.d_baseline_km) / _C_KM_US
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx; utx1 = (tx[1] - py) * inv_dptx; utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx; urx1 = (rx[1] - py) * inv_dprx; urx2 = (rx[2] - pz) * inv_dprx
+        pred_f = ns.K_doppler * (
+            vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2
+            + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2
+        )
         delay_residuals.append(m.delay_us - pred_d)
         doppler_residuals.append(m.doppler_hz - pred_f)
 
@@ -230,9 +352,9 @@ def solve_multinode(solver_input, node_configs):
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
-        "vel_east": float(vel_sol[0]),
-        "vel_north": float(vel_sol[1]),
-        "vel_up": float(vel_sol[2]),
+        "vel_east": float(state[2]),
+        "vel_north": float(state[3]),
+        "vel_up": float(state[4]),
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
