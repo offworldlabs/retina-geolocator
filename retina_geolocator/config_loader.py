@@ -337,9 +337,9 @@ def delay_to_range(delay_us):
     Returns:
         Range in km (total path TX→Target→RX)
     """
-    # Speed of light: 300 km/ms = 0.3 km/μs
+    # Speed of light: 299792.458 km/s = 0.299792458 km/μs
     # Delay is two-way time, so range = delay * c
-    return delay_us * 0.3
+    return delay_us * 0.299792458
 
 
 if __name__ == "__main__":

@@ -37,8 +37,8 @@ def bistatic_delay(target_enu, tx_enu, rx_enu=(0, 0, 0)):
     # Differential range (compared to reference path)
     differential_range = bistatic_range - dist_tx_to_rx  # km
 
-    # Convert to delay (speed of light = 300 km/ms = 0.3 km/μs)
-    c_km_per_us = 0.3  # km/μs
+    # Convert to delay (speed of light = 299792.458 km/s = 0.299792458 km/μs)
+    c_km_per_us = 0.299792458  # km/μs
     delay = differential_range / c_km_per_us  # μs
 
     return delay

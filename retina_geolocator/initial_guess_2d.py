@@ -31,7 +31,7 @@ def generate_initial_guess_2d(track, tx_enu, antenna_boresight, frequency, altit
     # Estimate bistatic range from delay
     # delay = (bistatic_range - baseline_distance) / c
     # bistatic_range ≈ delay * c + baseline_distance
-    c_km_per_us = 0.3  # km/μs
+    c_km_per_us = 0.299792458  # km/μs
     baseline_distance = np.linalg.norm(tx_enu)  # km
 
     bistatic_range = delay * c_km_per_us + baseline_distance  # km

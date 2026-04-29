@@ -42,7 +42,7 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     dz_rx = rx[2] - pz
     dist_tx_t = np.sqrt(dx_tx*dx_tx + dy_tx*dy_tx + dz_tx*dz_tx)
     dist_t_rx = np.sqrt(dx_rx*dx_rx + dy_rx*dy_rx + dz_rx*dz_rx)
-    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.3  # µs
+    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.299792458  # µs
 
     # Bistatic Doppler  (vectorised)
     inv_tx = 1.0 / dist_tx_t
