@@ -293,12 +293,24 @@ def solve_multinode(solver_input, node_configs):
     ub = [x0[0] + 60, x0[1] + 60,  300,  300,  100]
 
     try:
+        # `loss="huber"` — robust regression instead of plain L2.
+        # After lifting the N=2 EWMA gate, residual long tails remain at higher
+        # N (e.g. N=4 mean 2.81 km vs median 0.25 km — one bad channel in five
+        # drags the LS fit). Huber treats residuals up to f_scale quadratically
+        # and falls back to linear beyond, so a single misbehaving measurement
+        # can no longer dominate the cost. f_scale = 1.0 is in the same units
+        # as the SNR-weighted residuals (delay σ ≈ 0.1 µs × SNR weight cap 3 ≈
+        # 0.3, doppler weighted ≈ same), placing the cap ~3σ above the noise
+        # floor. Under pure Gaussian noise Huber behaves identically to plain
+        # L2, so well-behaved frames are unaffected.
         result = least_squares(
             _residual_function,
             x0,
             jac=_jacobian_function,
             args=(node_setups, measurements, z_fixed_km),
             method="trf",
+            loss="huber",
+            f_scale=1.0,
             bounds=(lb, ub),
             max_nfev=200,
             ftol=1e-8,
