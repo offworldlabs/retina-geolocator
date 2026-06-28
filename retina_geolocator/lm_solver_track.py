@@ -34,9 +34,9 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     pz = z0 + vz_km * dt
 
     # Bistatic delay  (vectorised)
-    dx_tx = px - tx[0]
-    dy_tx = py - tx[1]
-    dz_tx = pz - tx[2]
+    dx_tx = tx[0] - px
+    dy_tx = tx[1] - py
+    dz_tx = tx[2] - pz
     dx_rx = rx[0] - px
     dy_rx = rx[1] - py
     dz_rx = rx[2] - pz

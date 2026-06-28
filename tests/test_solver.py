@@ -12,6 +12,7 @@ from retina_geolocator.multinode_solver import (
     solve_multinode,
 )
 from retina_geolocator.bistatic_models import bistatic_delay, bistatic_doppler
+from retina_geolocator.lm_solver_track import _residual_vec
 
 
 # ── Coordinate conversions ────────────────────────────────────────────────────
@@ -85,6 +86,43 @@ class TestBistaticModels:
             100e6,
         )
         assert abs(doppler) > 1.0
+
+    def test_vectorized_track_residual_matches_reference_doppler(self):
+        state = np.array([10.0, -5.0, 3.0, 120.0, 80.0, 5.0])
+        dt = np.array([0.0, 1.0, 2.0])
+        tx = np.array([20.0, 8.0, 0.2])
+        rx = np.array([0.0, 0.0, 0.0])
+        frequency = 195e6
+
+        obs_delay = []
+        obs_doppler = []
+        for t in dt:
+            pos = np.array([
+                state[0] + state[3] / 1000 * t,
+                state[1] + state[4] / 1000 * t,
+                state[2] + state[5] / 1000 * t,
+            ])
+            obs_delay.append(bistatic_delay(pos, tx, rx))
+            obs_doppler.append(bistatic_doppler(pos, state[3:], tx, rx, frequency))
+
+        residuals = _residual_vec(
+            state,
+            dt,
+            np.array(obs_delay),
+            np.array(obs_doppler),
+            tx,
+            rx,
+            np.linalg.norm(rx - tx),
+            frequency,
+            frequency / 299792.458,
+            None,
+            0.0,
+            0.0,
+            np.empty(len(dt) * 3),
+        )
+
+        assert np.max(np.abs(residuals[0::3])) < 1e-9
+        assert np.max(np.abs(residuals[1::3])) < 1e-9
 
 
 # ── Residual function ─────────────────────────────────────────────────────────

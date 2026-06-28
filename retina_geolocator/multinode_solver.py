@@ -196,7 +196,10 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
     return np.array(rows, dtype=np.float64)
 
 
-def solve_multinode(solver_input, node_configs):
+def solve_multinode(solver_input, node_configs,
+                    v_max_ms: float = 300.0,
+                    sigma_min_floor: float = 0.05,
+                    rail_eps_ms: float = 5.0):
     """Solve for target position using multi-node measurements.
 
     Args:
@@ -288,9 +291,9 @@ def solve_multinode(solver_input, node_configs):
     # to zero and triggering immediate false-convergence on the first step.
     x0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
 
-    # Bounds: horizontal position ±60 km from guess, velocity ±300 m/s
-    lb = [x0[0] - 60, x0[1] - 60, -300, -300, -100]
-    ub = [x0[0] + 60, x0[1] + 60,  300,  300,  100]
+    # Bounds: horizontal position ±60 km from guess, velocity ±v_max_ms
+    lb = [x0[0] - 60, x0[1] - 60, -v_max_ms, -v_max_ms, -100]
+    ub = [x0[0] + 60, x0[1] + 60,  v_max_ms,  v_max_ms,  100]
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.
@@ -353,6 +356,23 @@ def solve_multinode(solver_input, node_configs):
     rms_delay = float(np.sqrt(np.mean(np.array(delay_residuals) ** 2)))
     rms_doppler = float(np.sqrt(np.mean(np.array(doppler_residuals) ** 2)))
 
+    # Velocity-observability guard. The bistatic Doppler Jacobian rows are
+    # b_i = û(T→TX)+û(T→RX); near-colinear receivers make them near-parallel, so
+    # velocity is unobservable and the bounded solve rails to the ±v_max corner
+    # (the 825 kt artifact). Detect via the smallest singular value of B; when
+    # also at the bound, drop the velocity but keep the (still valid) position.
+    B = np.empty((len(measurements), 2))
+    for i, m in enumerate(measurements):
+        ns = node_setups[m.node_id]
+        tx, rx = ns.tx_enu, ns.rx_enu
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+        B[i, 0] = (tx[0] - px) / dptx + (rx[0] - px) / dprx
+        B[i, 1] = (tx[1] - py) / dptx + (rx[1] - py) / dprx
+    sigma_min = float(np.linalg.svd(B, compute_uv=False).min())
+    speed_ms = math.hypot(float(state[2]), float(state[3]))
+    velocity_observable = not (sigma_min < sigma_min_floor and speed_ms > v_max_ms - rail_eps_ms)
+
     # Convert solution ENU back to LLA (z is fixed)
     lat, lon, alt_m = _enu_km_to_lla(
         state[0], state[1], z_fixed_km,
@@ -364,9 +384,10 @@ def solve_multinode(solver_input, node_configs):
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
-        "vel_east": float(state[2]),
-        "vel_north": float(state[3]),
-        "vel_up": float(state[4]),
+        "vel_east": float(state[2]) if velocity_observable else 0.0,
+        "vel_north": float(state[3]) if velocity_observable else 0.0,
+        "vel_up": float(state[4]) if velocity_observable else 0.0,
+        "velocity_observable": velocity_observable,
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
