@@ -51,6 +51,11 @@ _C_KM_S = 299792.458
 _SIGMA_DELAY_US = 0.1
 _SIGMA_DOPPLER_HZ = 2.0
 
+# Per-component velocity bound for the solve, m/s.  Also clips the seed from
+# the association stage, whose own limit is on total speed and so can produce a
+# single component beyond this — least_squares raises on an infeasible x0.
+_V_BOUND_MS = 300.0
+
 
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
     """Convert LLA to ENU (km) relative to a reference point."""
@@ -317,11 +322,25 @@ def solve_multinode(solver_input, node_configs):
     # so x=0, y=0 exactly. Using guess_enu[0:2] directly gives floating-point
     # residuals ~1e-13 that make ||x0|| ≈ 0, collapsing the TRF trust region
     # to zero and triggering immediate false-convergence on the first step.
-    x0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
+    #
+    # Velocity is seeded from the association stage's level-flight estimate
+    # when one is available.  With n=2 the system is under-determined in
+    # velocity — two Doppler projections for three components — so from a zero
+    # start the optimiser slides along the null direction and stops wherever
+    # the trust region runs out, which is where the physically impossible
+    # speeds came from.  The seed puts it on the branch the measurements
+    # actually imply; it changes nothing when the problem is well-determined.
+    # Clipped to _V_BOUND_MS: association accepts a speed up to its own limit,
+    # which a single component can exceed, and least_squares raises on an
+    # infeasible x0.
+    _v0 = solver_input.get("initial_velocity") or {}
+    _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
+    _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
+    x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
 
-    # Bounds: horizontal position ±60 km from guess, velocity ±300 m/s
-    lb = [x0[0] - 60, x0[1] - 60, -300, -300, -100]
-    ub = [x0[0] + 60, x0[1] + 60,  300,  300,  100]
+    # Bounds: horizontal position ±60 km from guess, velocity ±_V_BOUND_MS
+    lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -100]
+    ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  100]
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.
