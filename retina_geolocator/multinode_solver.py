@@ -11,6 +11,21 @@ State vector: [x, y, z, vx, vy, vz]
 Each node contributes two residuals per measurement:
   - Delay residual: measured_delay - predicted_delay (μs)
   - Doppler residual: measured_doppler - predicted_doppler (Hz)
+
+Both are divided by the corresponding measurement sigma so the least-squares is
+properly weighted and the two are commensurable.  Previously the delay residual
+was used raw and the Doppler residual scaled by a bare 0.1 — implying
+σ_delay = 1 μs and σ_doppler = 10 Hz, against a sensor model that produces
+0.1 μs and 2.0 Hz.  That under-weighted delay by 2× relative to Doppler.
+
+A note on frequency, because it is easy to get backwards: the Doppler Jacobian
+carries K = fc/c, so a high-band node influences the velocity solution more than
+a low-band one.  That is correct, not a bug.  Doppler noise is set by
+integration time and is therefore roughly the same in Hz across bands, so
+σ_v = σ_f·λ = σ_f·c/fc is *smaller* at high fc — a 599 MHz node genuinely
+measures velocity ~3× more precisely than a 183 MHz one and has earned the
+extra weight.  Converting the residual to m/s would remove exactly that
+weighting and make the estimator worse.
 """
 
 import math
@@ -23,6 +38,18 @@ from .Geometry import Geometry
 # Speed of light in km/µs (for delay) and km/s (for Doppler).
 _C_KM_US = 0.299792458
 _C_KM_S = 299792.458
+
+# Measurement sigmas, matching the sensor model the detections are generated
+# under (world.generate_detections_for_node: 0.1 µs and 2.0 Hz at reference
+# SNR, both scaled by the same noise factor).  Residuals are divided by these
+# so delay and Doppler enter the least-squares in units of their own
+# uncertainty rather than at an arbitrary relative scale.
+#
+# Only the *ratio* affects the solution — an overall factor cancels in the
+# argmin — and the reported rms_delay / rms_doppler are recomputed unweighted
+# in physical units afterwards, so the solver's rms gates are unaffected.
+_SIGMA_DELAY_US = 0.1
+_SIGMA_DOPPLER_HZ = 2.0
 
 
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
@@ -122,8 +149,8 @@ def _residual_function(state, node_setups, measurements, z_fixed_km):
         pred_doppler = ns.K_doppler * (v_tx + v_rx)
 
         weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
-        residuals.append((m.delay_us - pred_delay) * weight)
-        residuals.append((m.doppler_hz - pred_doppler) * weight * 0.1)
+        residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
+        residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
 
     return np.array(residuals, dtype=np.float64)
 
@@ -136,13 +163,15 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
 
     For state [x, y, vx, vy, vz] and residuals [r_delay, r_doppler] per node:
 
-    ∂r_delay/∂x  = -w/c * ((px-tx_x)/d_tx + (px-rx_x)/d_rx)
-    ∂r_delay/∂y  = -w/c * ((py-tx_y)/d_tx + (py-rx_y)/d_rx)
+    wd = w/σ_delay,  wf = w/σ_doppler
+
+    ∂r_delay/∂x  = -wd/c * ((px-tx_x)/d_tx + (px-rx_x)/d_rx)
+    ∂r_delay/∂y  = -wd/c * ((py-tx_y)/d_tx + (py-rx_y)/d_rx)
     ∂r_delay/∂v* = 0
 
-    ∂r_doppler/∂x   = -w*0.1*K * [(-vx_kms + v_tx*utx_x)/d_tx
-                                   + (-vx_kms + v_rx*urx_x)/d_rx]
-    ∂r_doppler/∂vx  = -w*0.1*K * (utx_x + urx_x) / 1000
+    ∂r_doppler/∂x   = -wf*K * [(-vx_kms + v_tx*utx_x)/d_tx
+                                + (-vx_kms + v_rx*urx_x)/d_rx]
+    ∂r_doppler/∂vx  = -wf*K * (utx_x + urx_x) / 1000
     (similarly for y, vy, vz)
     """
     px = state[0]
@@ -177,15 +206,17 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
 
         w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        wd = w / _SIGMA_DELAY_US
+        wf = w / _SIGMA_DOPPLER_HZ
         K = ns.K_doppler
 
         # ── Delay row ──────────────────────────────────────────────────────
-        dr1_dx = -w * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
-        dr1_dy = -w * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+        dr1_dx = -wd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+        dr1_dy = -wd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
         rows.append([dr1_dx, dr1_dy, 0.0, 0.0, 0.0])
 
         # ── Doppler row ─────────────────────────────────────────────────────
-        w01 = -w * 0.1 * K
+        w01 = -wf * K
         dr2_dx = w01 * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
         dr2_dy = w01 * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
         dr2_dvx = w01 * (utx0 + urx0) * INV1000
