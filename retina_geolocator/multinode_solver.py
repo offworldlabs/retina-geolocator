@@ -57,6 +57,27 @@ _SIGMA_DOPPLER_HZ = 2.0
 _V_BOUND_MS = 300.0
 
 
+def _sigma_for_snr(snr: float) -> tuple[float, float]:
+    """Per-measurement (σ_delay µs, σ_doppler Hz) from SNR.
+
+    Mirrors the sensor model the detections are generated under
+    (world.generate_detections_for_node): a base 0.1 µs / 2.0 Hz scaled by
+    ``max(0.5, 2.0 - (snr - 4)/18)``, so a marginal detection is twice as noisy
+    as the reference and a strong one half.
+
+    This is deliberately *not* the ``min(snr/10, 3.0)`` weight the position
+    solver applies.  That weight is a relative emphasis — it only has to get the
+    ordering right, and the docstring above notes an overall factor cancels in
+    the argmin.  fit_constant_velocity's output is a χ², a number compared
+    against an absolute threshold, so its σ has to be the real one or the
+    statistic is not a χ² at all.  At SNR 20 the two disagree by 2×, which would
+    be the difference between a threshold that rejects everything and one that
+    rejects nothing.
+    """
+    scale = max(0.5, 2.0 - (snr - 4.0) / 18.0) if snr > 0 else 1.0
+    return _SIGMA_DELAY_US * scale, _SIGMA_DOPPLER_HZ * scale
+
+
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
     """Convert LLA to ENU (km) relative to a reference point."""
     ecef = Geometry.lla2ecef(lat, lon, alt_m)
@@ -230,6 +251,248 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
         rows.append([dr2_dx, dr2_dy, dr2_dvx, dr2_dvy, dr2_dvz])
 
     return np.array(rows, dtype=np.float64)
+
+
+def _cv_residuals(state, node_setups, epochs, return_jac=False):
+    """Residuals (and optionally the Jacobian) for a constant-velocity fit.
+
+    state: [x, y, z, vx, vy, vz] — position km ENU at t0, velocity m/s ENU.
+    epochs: list of (dt_s, [(_CVMeas), ...]) with dt measured from t0.
+
+    Position at each epoch is p(t) = p0 + v·dt, so a measurement taken later in
+    the window constrains velocity through geometry as well as through Doppler.
+    That coupling is the whole point: it is what makes the system
+    over-determined and therefore testable.
+    """
+    px0, py0, pz0 = state[0], state[1], state[2]
+    vx = state[3] * 1e-3   # km/s
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    inv_C = 1.0 / _C_KM_US
+    res = []
+    rows = [] if return_jac else None
+
+    for dt, meas in epochs:
+        # km per (m/s) — the chain-rule factor from velocity to position.
+        dt_km_per_ms = dt * 1e-3
+        px = px0 + vx * dt
+        py = py0 + vy * dt
+        pz = pz0 + vz * dt
+
+        for m in meas:
+            ns = node_setups[m.node_id]
+            tx, rx = ns.tx_enu, ns.rx_enu
+
+            dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+            dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+            inv_dptx = 1.0 / dptx
+            inv_dprx = 1.0 / dprx
+
+            utx0 = (tx[0] - px) * inv_dptx
+            utx1 = (tx[1] - py) * inv_dptx
+            utx2 = (tx[2] - pz) * inv_dptx
+            urx0 = (rx[0] - px) * inv_dprx
+            urx1 = (rx[1] - py) * inv_dprx
+            urx2 = (rx[2] - pz) * inv_dprx
+
+            pred_delay = (dptx + dprx - ns.d_baseline_km) * inv_C
+            v_tx = vx * utx0 + vy * utx1 + vz * utx2
+            v_rx = vx * urx0 + vy * urx1 + vz * urx2
+            pred_doppler = ns.K_doppler * (v_tx + v_rx)
+
+            inv_sd = 1.0 / m.sigma_delay
+            inv_sf = 1.0 / m.sigma_doppler
+            res.append((m.delay_us - pred_delay) * inv_sd)
+            res.append((m.doppler_hz - pred_doppler) * inv_sf)
+
+            if not return_jac:
+                continue
+
+            # ── Delay row ────────────────────────────────────────────────────
+            dx = -inv_sd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+            dy = -inv_sd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+            dz = -inv_sd * inv_C * ((pz - tx[2]) * inv_dptx + (pz - rx[2]) * inv_dprx)
+            rows.append([dx, dy, dz,
+                         dx * dt_km_per_ms, dy * dt_km_per_ms, dz * dt_km_per_ms])
+
+            # ── Doppler row ──────────────────────────────────────────────────
+            wk = -inv_sf * ns.K_doppler
+            fx = wk * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
+            fy = wk * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
+            fz = wk * ((-vz + v_tx * utx2) * inv_dptx + (-vz + v_rx * urx2) * inv_dprx)
+            # Velocity enters twice: directly through the Doppler projection and
+            # indirectly through where the target has moved to by this epoch.
+            gvx = wk * (utx0 + urx0) * 1e-3 + fx * dt_km_per_ms
+            gvy = wk * (utx1 + urx1) * 1e-3 + fy * dt_km_per_ms
+            gvz = wk * (utx2 + urx2) * 1e-3 + fz * dt_km_per_ms
+            rows.append([fx, fy, fz, gvx, gvy, gvz])
+
+    if return_jac:
+        return np.array(rows, dtype=np.float64)
+    return np.array(res, dtype=np.float64)
+
+
+class _CVMeas:
+    """One delay/Doppler measurement with its own sigmas, for the batch fit."""
+
+    __slots__ = ("node_id", "delay_us", "doppler_hz", "sigma_delay", "sigma_doppler")
+
+    def __init__(self, node_id, delay_us, doppler_hz, snr=0.0):
+        self.node_id = node_id
+        self.delay_us = delay_us
+        self.doppler_hz = doppler_hz
+        self.sigma_delay, self.sigma_doppler = _sigma_for_snr(snr)
+
+
+def fit_constant_velocity(fit_input, node_configs):
+    """Fit one constant-velocity trajectory to K epochs of bistatic measurements.
+
+    This is the test that works at n=2, where the single-epoch residual gates
+    structurally cannot.  A single epoch from two nodes gives 4 measurements
+    against 6 unknowns (x, y, z, vx, vy, vz) — under-determined, so both
+    rms_delay and rms_doppler go to zero for a cross pairing exactly as they do
+    for a real target, and no threshold on them carries information.  Pinning
+    altitude, as solve_multinode does, trades one unknown for the ambiguity and
+    still leaves nothing to test: differentiating the two delay equations shows
+    the phantom's own velocity satisfies the *same* 2x2 system that the two
+    Doppler measurements do, so a cross pairing is self-consistent to first
+    order for as long as both aircraft are tracked.
+
+    Time is the only remaining information.  Over K epochs the count becomes 4K
+    measurements against the same 6 unknowns — over-determined from K=2, and
+    comfortably so by the 5 epochs a confirmed per-node track already carries.
+    A real target fits because it is one rigid point flying straight; a cross
+    pairing has to make two independent aircraft look like one through a
+    nonlinear geometric map, and the trajectory it needs is curved.
+
+    The fit runs in measurement space (σ ≈ 0.1 µs ≈ 30 m), not position space,
+    so it is not defeated by the GDOP amplification that puts blind n=2 position
+    error in the kilometres.
+
+    Args:
+        fit_input: {
+            "initial_guess": {"lat", "lon", "alt_km"},
+            "initial_velocity": {"vel_east_ms", "vel_north_ms"} | None,
+            "epochs": [{"t_s": float,
+                        "measurements": [{"node_id", "delay_us",
+                                          "doppler_hz", "snr"}, ...]}, ...],
+        }
+        node_configs: dict[node_id] → config with rx/tx lat/lon/alt and fc_hz.
+
+    Returns:
+        dict with success, lat, lon, alt_m, vel_east/north/up, chi2, dof,
+        chi2_per_dof, n_epochs, n_measurements, contributing_node_ids,
+        timestamp_ms — or None if the input is too thin or the fit fails.
+    """
+    guess = fit_input.get("initial_guess") or {}
+    raw_epochs = fit_input.get("epochs") or []
+    if len(raw_epochs) < 2 or not guess:
+        return None
+
+    ref_lat = guess["lat"]
+    ref_lon = guess["lon"]
+    ref_alt_m = 0.0
+
+    node_setups = {}
+    for ep in raw_epochs:
+        for m in ep.get("measurements", ()):
+            nid = m["node_id"]
+            if nid in node_setups:
+                continue
+            cfg = node_configs.get(nid)
+            if cfg is None:
+                continue
+            rx_enu = _lla_to_enu_km(
+                cfg.get("rx_lat", 0), cfg.get("rx_lon", 0),
+                cfg.get("rx_alt_ft", 0) * 0.3048, ref_lat, ref_lon, ref_alt_m,
+            )
+            tx_enu = _lla_to_enu_km(
+                cfg.get("tx_lat", 0), cfg.get("tx_lon", 0),
+                cfg.get("tx_alt_ft", 0) * 0.3048, ref_lat, ref_lon, ref_alt_m,
+            )
+            node_setups[nid] = NodeSetup(
+                nid, rx_enu, tx_enu, cfg.get("fc_hz", cfg.get("FC", 195e6)),
+            )
+
+    # Epoch times are relative to the first, so dt=0 at the state's reference
+    # and the position parameters stay well-scaled.
+    t0 = float(raw_epochs[0]["t_s"])
+    epochs = []
+    n_meas = 0
+    for ep in raw_epochs:
+        meas = [
+            _CVMeas(m["node_id"], m["delay_us"], m["doppler_hz"], m.get("snr", 0))
+            for m in ep.get("measurements", ())
+            if m["node_id"] in node_setups
+        ]
+        if not meas:
+            continue
+        epochs.append((float(ep["t_s"]) - t0, meas))
+        n_meas += len(meas)
+
+    n_resid = 2 * n_meas
+    dof = n_resid - 6
+    if len(epochs) < 2 or dof < 1:
+        return None
+
+    guess_enu = _lla_to_enu_km(
+        guess["lat"], guess["lon"], float(guess.get("alt_km", 7.0)) * 1000,
+        ref_lat, ref_lon, ref_alt_m,
+    )
+    _v0 = fit_input.get("initial_velocity") or {}
+    _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
+    _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
+    # Position starts at the ENU origin for the same reason solve_multinode does
+    # it: guess_enu[0:2] are ~1e-13 rather than exactly zero, and a near-zero
+    # ||x0|| collapses the TRF trust region into immediate false convergence.
+    x0 = np.array([0.0, 0.0, guess_enu[2], _seed_e, _seed_n, 0.0])
+
+    lb = [-60.0, -60.0, 0.05, -_V_BOUND_MS, -_V_BOUND_MS, -100.0]
+    ub = [60.0, 60.0, 20.0, _V_BOUND_MS, _V_BOUND_MS, 100.0]
+    x0 = np.clip(x0, lb, ub)
+
+    try:
+        # Plain L2, unlike solve_multinode's Huber.  Huber exists there to stop
+        # one bad channel dragging a position fix; here the sum of squares *is*
+        # the output, and down-weighting the large residuals would flatten
+        # exactly the signal the test reads.
+        result = least_squares(
+            _cv_residuals,
+            x0,
+            jac=lambda s, *a: _cv_residuals(s, *a, return_jac=True),
+            args=(node_setups, epochs),
+            method="trf",
+            bounds=(lb, ub),
+            max_nfev=200,
+            ftol=1e-8,
+            xtol=1e-8,
+        )
+    except Exception:
+        return None
+
+    chi2 = float(np.sum(result.fun ** 2))
+    state = result.x
+    lat, lon, alt_m = _enu_km_to_lla(
+        state[0], state[1], state[2], ref_lat, ref_lon, ref_alt_m,
+    )
+
+    return {
+        "success": True,
+        "lat": float(lat),
+        "lon": float(lon),
+        "alt_m": float(alt_m),
+        "vel_east": float(state[3]),
+        "vel_north": float(state[4]),
+        "vel_up": float(state[5]),
+        "chi2": chi2,
+        "dof": int(dof),
+        "chi2_per_dof": chi2 / dof,
+        "n_epochs": len(epochs),
+        "n_measurements": n_meas,
+        "contributing_node_ids": sorted(node_setups),
+        "timestamp_ms": fit_input.get("timestamp_ms", 0),
+    }
 
 
 def solve_multinode(solver_input, node_configs):
