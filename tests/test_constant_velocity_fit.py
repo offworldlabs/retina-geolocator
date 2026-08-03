@@ -109,16 +109,25 @@ def _fit(epochs, lat=34.88, lon=-82.35, alt_km=7.0, vel=None):
 
 class TestRecoversAKnownTrajectory:
     def test_noiseless_fit_is_exact(self):
-        """Position, altitude and velocity all come back, from a wrong start."""
+        """Position, altitude and velocity all come back, from a wrong start.
+
+        The reported position is the trajectory at the *last* epoch — where the
+        target is now — so the expectation is the start point dead-reckoned
+        across the window, not the start point itself.
+        """
         lat, lon, alt, ve, vn = 34.88, -82.35, 7.0, 180.0, -90.0
-        epochs = _trajectory(lat, lon, alt, ve, vn, 5, 2.0)
+        n, dt = 5, 2.0
+        epochs = _trajectory(lat, lon, alt, ve, vn, n, dt)
         # Deliberately start ~2 km off in position and 2 km off in altitude.
         out = _fit(epochs, lat=lat + 0.02, lon=lon - 0.02, alt_km=9.0,
                    vel={"vel_east_ms": 150.0, "vel_north_ms": -60.0})
 
         assert out is not None and out["success"]
-        err_km = math.hypot((out["lat"] - lat) * 111.32,
-                            (out["lon"] - lon) * 91.3)
+        span = (n - 1) * dt
+        exp_lat = lat + vn * span / 111_320.0
+        exp_lon = lon + ve * span / (111_320.0 * math.cos(math.radians(lat)))
+        err_km = math.hypot((out["lat"] - exp_lat) * 111.32,
+                            (out["lon"] - exp_lon) * 91.3)
         assert err_km < 0.2, f"position off by {err_km:.3f} km"
         # Altitude is a free parameter here — pinning it is what removes the
         # extra constraint the test depends on — so it has to be solved for.
@@ -209,3 +218,31 @@ class TestSeparatesCrossPairings:
             return sum(1 for x in false_chi if x > thr) / len(false_chi)
 
         assert rejection(4.0) > rejection(2.0)
+
+
+class TestReportedPositionIsCurrent:
+    """lat/lon are the trajectory at the last epoch, not at the state's t0.
+
+    The state is parameterised at the start of the window, which for a 20-sample
+    history is up to 40 s in the past — 8 km at 200 m/s.  Reporting that as "the
+    position" made the fit measure *worse* than a single-epoch re-solve (3.94 km
+    median against 2.62 km) despite using 4K measurements, and fed a stale guess
+    to the solver's 2 km displacement gate.
+    """
+
+    def test_position_advances_with_the_window(self):
+        lat, lon, ve, vn = 34.88, -82.35, 200.0, 0.0
+        short = _fit(_trajectory(lat, lon, 7.0, ve, vn, 3, 2.0))
+        long = _fit(_trajectory(lat, lon, 7.0, ve, vn, 9, 2.0))
+
+        # Due east at 200 m/s: 4 s of window vs 16 s is 2.4 km of separation.
+        east_km_short = (short["lon"] - lon) * 91.3
+        east_km_long = (long["lon"] - lon) * 91.3
+        assert east_km_long - east_km_short == pytest.approx(2.4, abs=0.4)
+
+    def test_a_stationary_target_reports_where_it_is(self):
+        """With no velocity there is nothing to propagate, so t0 == t_last."""
+        lat, lon = 34.88, -82.35
+        out = _fit(_trajectory(lat, lon, 7.0, 0.0, 0.0, 6, 2.0))
+        err_km = math.hypot((out["lat"] - lat) * 111.32, (out["lon"] - lon) * 91.3)
+        assert err_km < 0.3

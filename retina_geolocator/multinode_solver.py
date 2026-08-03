@@ -384,6 +384,9 @@ def fit_constant_velocity(fit_input, node_configs):
         dict with success, lat, lon, alt_m, vel_east/north/up, chi2, dof,
         chi2_per_dof, n_epochs, n_measurements, contributing_node_ids,
         timestamp_ms — or None if the input is too thin or the fit fails.
+
+        lat/lon/alt_m are the trajectory evaluated at the *last* epoch, i.e.
+        where the target is now, not where the state vector is parameterised.
     """
     guess = fit_input.get("initial_guess") or {}
     raw_epochs = fit_input.get("epochs") or []
@@ -473,9 +476,20 @@ def fit_constant_velocity(fit_input, node_configs):
 
     chi2 = float(np.sum(result.fun ** 2))
     state = result.x
-    lat, lon, alt_m = _enu_km_to_lla(
-        state[0], state[1], state[2], ref_lat, ref_lon, ref_alt_m,
-    )
+
+    # Report the position at the *last* epoch, not at t0.  The state is
+    # parameterised at the start of the window, which for a 20-sample track
+    # history is up to 40 s in the past — at 200 m/s that is 8 km of staleness
+    # in a quantity every caller reads as "where the target is".  It also feeds
+    # solver.py's 2 km displacement gate, which would reject good solves for
+    # disagreeing with a deliberately old position.  Measured: reporting t0 put
+    # the fit at 3.94 km median error against 2.62 km for a single-epoch
+    # re-solve, which is the wrong way round given the fit uses 4K measurements.
+    dt_last = epochs[-1][0]
+    px = state[0] + state[3] * 1e-3 * dt_last
+    py = state[1] + state[4] * 1e-3 * dt_last
+    pz = state[2] + state[5] * 1e-3 * dt_last
+    lat, lon, alt_m = _enu_km_to_lla(px, py, pz, ref_lat, ref_lon, ref_alt_m)
 
     return {
         "success": True,
