@@ -8,6 +8,7 @@ import math
 from scipy.optimize import minimize_scalar
 from .bistatic_models import bistatic_delay
 from .Geometry import Geometry
+from retina_geolocator.constants import C_KM_US
 
 
 def lla_to_enu_km(lat, lon, alt, ref_lat, ref_lon, ref_alt):
@@ -156,7 +157,7 @@ def generate_initial_guess(track, tx_enu, boresight_vector, frequency):
     rx_enu = np.array([0, 0, 0])
     tx = np.array(tx_enu)
     baseline_dist = np.linalg.norm(tx - rx_enu)  # km
-    differential_range = first_det.delay * 0.299792458  # μs * km/μs = km
+    differential_range = first_det.delay * C_KM_US  # μs * km/μs = km
     bistatic_range = baseline_dist + differential_range  # km (total path)
 
     # Use fixed altitude (altitude not very accurate in this model)
@@ -323,7 +324,7 @@ def generate_multi_start_guesses(track, tx_enu, boresight_vector, frequency, n_s
     rx_enu = np.array([0, 0, 0])
     tx = np.array(tx_enu)
     baseline_dist = np.linalg.norm(tx - rx_enu)
-    differential_range = first_det.delay * 0.299792458
+    differential_range = first_det.delay * C_KM_US
     bistatic_range = baseline_dist + differential_range  # km
 
     guesses = []

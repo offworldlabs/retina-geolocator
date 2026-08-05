@@ -7,6 +7,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from .bistatic_models import bistatic_delay, bistatic_doppler
 from .baseline_geometry import calculate_target_azimuth, antenna_gain_pattern
+from retina_geolocator.constants import C_KM_S, C_KM_US
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     dz_rx = rx[2] - pz
     dist_tx_t = np.sqrt(dx_tx*dx_tx + dy_tx*dy_tx + dz_tx*dz_tx)
     dist_t_rx = np.sqrt(dx_rx*dx_rx + dy_rx*dy_rx + dz_rx*dz_rx)
-    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.299792458  # µs
+    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / C_KM_US  # µs
 
     # Bistatic Doppler  (vectorised)
     inv_tx = 1.0 / dist_tx_t
@@ -155,7 +156,7 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     tx = np.asarray(tx_enu, dtype=np.float64)
     rx = np.asarray(rx_enu, dtype=np.float64)
     dist_tx_rx = np.linalg.norm(rx - tx)
-    f_over_c = frequency / 299792.458  # Hz / (km/s) → 1/km
+    f_over_c = frequency / C_KM_S  # Hz / (km/s) → 1/km
 
     antenna_sigma = (48.0 / 2.355) if antenna_boresight is not None else 0.0
 

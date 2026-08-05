@@ -37,8 +37,8 @@ def bistatic_delay(target_enu, tx_enu, rx_enu=(0, 0, 0)):
     # Differential range (compared to reference path)
     differential_range = bistatic_range - dist_tx_to_rx  # km
 
-    # Convert to delay (speed of light = 299792.458 km/s = 0.299792458 km/μs)
-    c_km_per_us = 0.299792458  # km/μs
+    # Convert to delay via the shared constant (see constants.py)
+    from retina_geolocator.constants import C_KM_US as c_km_per_us
     delay = differential_range / c_km_per_us  # μs
 
     return delay
@@ -88,7 +88,7 @@ def bistatic_doppler(target_enu, velocity_enu, tx_enu, rx_enu, frequency):
 
     # Doppler shift (double contribution)
     # f_doppler = (f_tx / c) * (v_toward_tx + v_toward_rx)
-    c_km_per_s = 299792.458  # km/s
+    from retina_geolocator.constants import C_KM_S as c_km_per_s
     doppler = (frequency / c_km_per_s) * (v_radial_tx + v_radial_rx)  # Hz
 
     return doppler

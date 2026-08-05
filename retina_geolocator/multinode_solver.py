@@ -36,8 +36,8 @@ from scipy.optimize import least_squares
 from .Geometry import Geometry
 
 # Speed of light in km/µs (for delay) and km/s (for Doppler).
-_C_KM_US = 0.299792458
-_C_KM_S = 299792.458
+from retina_geolocator.constants import C_KM_S as _C_KM_S
+from retina_geolocator.constants import C_KM_US as _C_KM_US
 
 # Measurement sigmas, matching the sensor model the detections are generated
 # under (world.generate_detections_for_node: 0.1 µs and 2.0 Hz at reference

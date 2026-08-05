@@ -339,7 +339,8 @@ def delay_to_range(delay_us):
     """
     # Speed of light: 299792.458 km/s = 0.299792458 km/μs
     # Delay is two-way time, so range = delay * c
-    return delay_us * 0.299792458
+    from retina_geolocator.constants import C_KM_US
+    return delay_us * C_KM_US
 
 
 if __name__ == "__main__":
