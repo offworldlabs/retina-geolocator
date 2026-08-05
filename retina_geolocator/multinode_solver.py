@@ -668,8 +668,12 @@ def solve_multinode(solver_input, node_configs):
         pred_d = (dptx + dprx - ns.d_baseline_km) / _C_KM_US
         inv_dptx = 1.0 / dptx
         inv_dprx = 1.0 / dprx
-        utx0 = (tx[0] - px) * inv_dptx; utx1 = (tx[1] - py) * inv_dptx; utx2 = (tx[2] - pz) * inv_dptx
-        urx0 = (rx[0] - px) * inv_dprx; urx1 = (rx[1] - py) * inv_dprx; urx2 = (rx[2] - pz) * inv_dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
         pred_f = ns.K_doppler * (
             vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2
             + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2

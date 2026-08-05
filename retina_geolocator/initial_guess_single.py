@@ -6,7 +6,6 @@ Uses bistatic delay ellipsoid and antenna boresight constraint.
 import numpy as np
 import math
 from scipy.optimize import minimize_scalar
-from .bistatic_models import bistatic_delay
 from .Geometry import Geometry
 from retina_geolocator.constants import C_KM_US
 
@@ -348,57 +347,3 @@ def generate_multi_start_guesses(track, tx_enu, boresight_vector, frequency, n_s
         guesses.append(generate_initial_guess(track, tx_enu, boresight_vector, frequency))
 
     return guesses
-
-
-if __name__ == "__main__":
-    # Test initial guess generation
-    import sys
-    sys.path.append('.')
-    from config_loader import load_config, load_tracks
-    from baseline_geometry import calculate_baseline_geometry
-    from Geometry import Geometry
-
-    print("Testing initial guess generation\n")
-
-    # Load config
-    config = load_config("config.yml")
-    print(config)
-    print()
-
-    # Calculate baseline geometry
-    geometry = calculate_baseline_geometry(config.rx_lla, config.tx_lla)
-    print(f"Antenna boresight: {geometry['antenna_boresight']:.2f}°")
-    print(f"Boresight vector: {geometry['antenna_boresight_vector']}")
-    print()
-
-    # Convert TX to ENU (in km)
-    tx_ecef = Geometry.lla2ecef(config.tx_lla[0], config.tx_lla[1], config.tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   config.rx_lla[0], config.rx_lla[1], config.rx_lla[2])
-    tx_enu = tuple(x / 1000 for x in tx_enu_m)
-
-    # Load a track
-    tracks = load_tracks("events_full_window.jsonl", min_detections=20)
-    test_track = tracks[0]
-    print(f"Test track: {test_track}")
-    print(f"First detection: {test_track.detections[0]}")
-    print()
-
-    # Generate initial guess
-    initial_guess = generate_initial_guess(
-        test_track, tx_enu, geometry['antenna_boresight_vector'], config.frequency
-    )
-
-    print("Initial guess:")
-    print(f"  Position: ({initial_guess[0]:.2f}, {initial_guess[1]:.2f}, {initial_guess[2]:.2f}) km")
-    print(f"  Velocity: ({initial_guess[3]:.1f}, {initial_guess[4]:.1f}, {initial_guess[5]:.1f}) m/s")
-    print()
-
-    # Verify the guess produces reasonable delay
-    predicted_delay = bistatic_delay(
-        initial_guess[0:3], tx_enu, (0, 0, 0)
-    )
-    measured_delay = test_track.detections[0].delay
-    print(f"Measured delay: {measured_delay:.2f} μs")
-    print(f"Predicted delay from guess: {predicted_delay:.2f} μs")
-    print(f"Error: {abs(predicted_delay - measured_delay):.2f} μs")
