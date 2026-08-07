@@ -55,6 +55,12 @@ _SIGMA_DOPPLER_HZ = 2.0
 # the association stage, whose own limit is on total speed and so can produce a
 # single component beyond this — least_squares raises on an infeasible x0.
 _V_BOUND_MS = 300.0
+# Vertical velocity bound for the single-epoch solve, m/s.  Deliberately much
+# tighter than the horizontal bound — see the note at the bounds in
+# solve_multinode.  (fit_constant_velocity keeps a looser ±100: its multi-epoch
+# span constrains velocity through the trajectory, not just the instantaneous
+# Doppler set.)
+_VZ_BOUND_MS = 20.0
 
 
 def _sigma_for_snr(snr: float) -> tuple[float, float]:
@@ -615,9 +621,17 @@ def solve_multinode(solver_input, node_configs):
     _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
     x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
 
-    # Bounds: horizontal position ±60 km from guess, velocity ±_V_BOUND_MS
-    lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -100]
-    ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  100]
+    # Bounds: horizontal position ±60 km from guess, horizontal velocity
+    # ±_V_BOUND_MS.  Vertical velocity is pinned near level flight (±20 m/s
+    # covers commercial climb/descent): with n Doppler equations against
+    # three velocity unknowns the fit is exactly determined at n=3, and a
+    # ±100 m/s vz absorbed the entire Doppler misfit — rms_doppler came out
+    # 0.0 on every staging n=3 solve (an inert reject gate) while horizontal
+    # velocity landed ~70 m/s off and dead-reckoned the map marker km away.
+    # Tightening vz makes the velocity part overdetermined again, so
+    # vel_east/vel_north are honest and rms_doppler is a live residual.
+    lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
+    ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  _VZ_BOUND_MS]
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.

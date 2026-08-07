@@ -1,5 +1,7 @@
 """Unit tests for the multi-node geolocation solver."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -333,3 +335,69 @@ class TestSolveMultinode:
         result = solve_multinode(s_in, two_node_configs)
         assert result is not None
         assert set(result["contributing_node_ids"]) == {"node_a", "node_b"}
+
+
+class TestVerticalVelocityBound:
+    """vz is pinned near level flight so it cannot absorb the Doppler misfit.
+
+    At n=3 the Doppler system is three equations against three velocity
+    unknowns — an exact fit.  With vz free to ±100 m/s the optimiser zeroed
+    the Doppler residuals by pouring error into vz, leaving rms_doppler at
+    exactly 0.0 (an inert reject gate) and the horizontal velocity ~70 m/s
+    off on staging.  ±20 m/s covers real climb/descent while keeping the
+    horizontal components identified.
+    """
+
+    @pytest.fixture
+    def three_node_configs(self):
+        return {
+            "node_a": {
+                "rx_lat": 40.7128, "rx_lon": -74.0060, "rx_alt_ft": 100,
+                "tx_lat": 40.78, "tx_lon": -73.95, "tx_alt_ft": 500,
+                "fc_hz": 100e6,
+            },
+            "node_b": {
+                "rx_lat": 40.75, "rx_lon": -73.90, "rx_alt_ft": 150,
+                "tx_lat": 40.70, "tx_lon": -73.85, "tx_alt_ft": 400,
+                "fc_hz": 100e6,
+            },
+            "node_c": {
+                "rx_lat": 40.65, "rx_lon": -73.98, "rx_alt_ft": 120,
+                "tx_lat": 40.62, "tx_lon": -73.88, "tx_alt_ft": 600,
+                "fc_hz": 100e6,
+            },
+        }
+
+    def test_n3_level_target_recovers_horizontal_velocity(self, three_node_configs):
+        """Clean n=3 measurements of a level target, NO velocity seed (the
+        worst case the seed normally papers over): the solved horizontal
+        velocity must land near truth instead of wandering along a
+        vz-compensated null direction."""
+        vel_east, vel_north = 150.0, 80.0
+        s_in = TestSolveMultinode._make_synthetic_input(
+            self, three_node_configs, 40.72, -73.93, 8.0,
+            vel_east=vel_east, vel_north=vel_north,
+        )
+        result = solve_multinode(s_in, three_node_configs)
+
+        assert result is not None and result["success"]
+        assert abs(result["vel_up"]) <= 20.0 + 1e-6
+        speed = math.hypot(result["vel_east"], result["vel_north"])
+        truth_speed = math.hypot(vel_east, vel_north)
+        assert abs(speed - truth_speed) < 25.0, (
+            f"speed {speed:.1f} vs truth {truth_speed:.1f}"
+        )
+
+    def test_n3_climbing_target_within_bound_still_fits(self, three_node_configs):
+        """A genuine 15 m/s climb is inside the bound: the fit must not be
+        degraded by the tighter box."""
+        s_in = TestSolveMultinode._make_synthetic_input(
+            self, three_node_configs, 40.72, -73.93, 8.0,
+            vel_east=120.0, vel_north=-60.0, vel_up=15.0,
+        )
+        result = solve_multinode(s_in, three_node_configs)
+
+        assert result is not None and result["success"]
+        speed = math.hypot(result["vel_east"], result["vel_north"])
+        truth_speed = math.hypot(120.0, -60.0)
+        assert abs(speed - truth_speed) < 25.0
