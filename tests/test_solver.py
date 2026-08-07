@@ -336,6 +336,19 @@ class TestSolveMultinode:
         assert result is not None
         assert set(result["contributing_node_ids"]) == {"node_a", "node_b"}
 
+    def test_per_node_delay_res_us_keyed_by_contributing_node(self, two_node_configs):
+        """Per-node residuals are present, keyed exactly to the contributing
+        nodes, and non-negative — a caller trims on this to salvage a solve
+        a contaminated single-node track would otherwise sink."""
+        s_in = self._make_synthetic_input(two_node_configs, 40.73, -73.95, 8.0)
+        result = solve_multinode(s_in, two_node_configs)
+        assert result is not None
+        assert "per_node_delay_res_us" in result
+        assert set(result["per_node_delay_res_us"]) == set(
+            result["contributing_node_ids"]
+        )
+        assert all(v >= 0 for v in result["per_node_delay_res_us"].values())
+
 
 class TestVerticalVelocityBound:
     """vz is pinned near level flight so it cannot absorb the Doppler misfit.

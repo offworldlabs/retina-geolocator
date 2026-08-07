@@ -698,6 +698,20 @@ def solve_multinode(solver_input, node_configs):
     rms_delay = float(np.sqrt(np.mean(np.array(delay_residuals) ** 2)))
     rms_doppler = float(np.sqrt(np.mean(np.array(doppler_residuals) ** 2)))
 
+    # Per-node worst-case delay residual, same order as `measurements`.  A
+    # contaminated measurement (a single-node track from a different
+    # aircraft bundled in by association) can inflate rms_delay well past
+    # the reject threshold while Huber keeps the fitted position good — this
+    # lets a caller identify and trim the offending node instead of
+    # discarding the whole solve.
+    per_node_delay_res_us: dict[str, float] = {}
+    for m, res in zip(measurements, delay_residuals):
+        prev_res = per_node_delay_res_us.get(m.node_id, 0.0)
+        per_node_delay_res_us[m.node_id] = max(prev_res, abs(res))
+    per_node_delay_res_us = {
+        nid: round(v, 3) for nid, v in per_node_delay_res_us.items()
+    }
+
     # Convert solution ENU back to LLA (z is fixed)
     lat, lon, alt_m = _enu_km_to_lla(
         state[0], state[1], z_fixed_km,
@@ -719,4 +733,5 @@ def solve_multinode(solver_input, node_configs):
         "n_measurements": len(measurements),
         "cost": float(result.cost),
         "timestamp_ms": solver_input.get("timestamp_ms", 0),
+        "per_node_delay_res_us": per_node_delay_res_us,
     }
