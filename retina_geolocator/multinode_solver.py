@@ -537,6 +537,11 @@ def solve_multinode(solver_input, node_configs):
             rms_delay, rms_doppler: fit quality
             n_nodes: number of nodes used
             timestamp_ms: from input
+            cov_en_km2: 2x2 east/north position covariance (km²) as a plain
+                list-of-lists [[exx, exy], [exy, eyy]] of Python floats, or
+                None if the covariance could not be computed.
+            pos_sigma_km: sqrt(0.5*(exx+eyy)), a single-number position sigma
+                for callers that just want a scalar quality weight, or None.
         or None if solve fails
     """
     guess = solver_input["initial_guess"]
@@ -712,6 +717,42 @@ def solve_multinode(solver_input, node_configs):
         nid: round(v, 3) for nid, v in per_node_delay_res_us.items()
     }
 
+    # Per-solve east/north position covariance, for the Kalman track smoother
+    # that consumes this as its measurement noise.
+    #
+    # cov = s² * (JᵀJ)⁻¹ is the Gauss-Newton approximation to the covariance
+    # of the fit, with s² the reduced chi-square (2·cost/dof) floored at 1.0 —
+    # the floor so a fit that happens to land under the sensor-noise model
+    # never claims better accuracy than the model supports.
+    #
+    # J here is `result.jac`, which for method="trf" with loss="huber" is
+    # *not* the plain ∂residual/∂state Jacobian: scipy's TRF loop rescales it
+    # in place (`scale_for_robust_loss_function`) so that JᵀJ approximates the
+    # Hessian of the *robust* cost rather than of the raw sum-of-squares —
+    # i.e. it already carries Huber's down-weighting of whatever channel
+    # Huber exists here to reject. Either way this is a Gauss-Newton
+    # approximation, not the exact Hessian, which is fine for its one
+    # consumer (a display-side Kalman smoother's measurement noise) but not
+    # rigorous enough for hypothesis testing.
+    cov_en = None
+    pos_sigma_km = None
+    try:
+        J = np.asarray(result.jac)
+        dof = max(1, J.shape[0] - J.shape[1])
+        s2 = max(1.0, 2.0 * float(result.cost) / dof)
+        jtj = J.T @ J
+        try:
+            cov = np.linalg.inv(jtj)
+        except np.linalg.LinAlgError:
+            cov = np.linalg.pinv(jtj)
+        cov = s2 * cov
+        exx, exy, eyy = float(cov[0, 0]), float(cov[0, 1]), float(cov[1, 1])
+        if math.isfinite(exx) and math.isfinite(exy) and math.isfinite(eyy) and exx > 0 and eyy > 0:
+            cov_en = [[exx, exy], [exy, eyy]]
+            pos_sigma_km = math.sqrt(0.5 * (exx + eyy))
+    except Exception:
+        pass
+
     # Convert solution ENU back to LLA (z is fixed)
     lat, lon, alt_m = _enu_km_to_lla(
         state[0], state[1], z_fixed_km,
@@ -734,4 +775,6 @@ def solve_multinode(solver_input, node_configs):
         "cost": float(result.cost),
         "timestamp_ms": solver_input.get("timestamp_ms", 0),
         "per_node_delay_res_us": per_node_delay_res_us,
+        "cov_en_km2": cov_en,
+        "pos_sigma_km": pos_sigma_km,
     }
