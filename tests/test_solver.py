@@ -414,3 +414,32 @@ class TestVerticalVelocityBound:
         speed = math.hypot(result["vel_east"], result["vel_north"])
         truth_speed = math.hypot(120.0, -60.0)
         assert abs(speed - truth_speed) < 25.0
+
+    def test_vz_saturated_false_on_clean_level_flight(self, three_node_configs):
+        """Clean n=3 level flight: vz stays off the bound, and the flag's
+        own identity (pinned iff |vel_up| is at the bound) holds."""
+        s_in = TestSolveMultinode._make_synthetic_input(
+            self, three_node_configs, 40.72, -73.93, 8.0,
+            vel_east=150.0, vel_north=80.0,
+        )
+        result = solve_multinode(s_in, three_node_configs)
+
+        assert result is not None and result["success"]
+        assert "vz_saturated" in result
+        assert result["vz_saturated"] is False
+        assert result["vz_saturated"] == (abs(result["vel_up"]) >= 19.99)
+
+    def test_vz_saturated_true_when_vertical_rate_exceeds_bound(self, three_node_configs):
+        """A truth vz well past the bound (80 m/s climb) pins vz at the box
+        edge — the solve reports the pin, not the true rate, and the flag
+        says so."""
+        s_in = TestSolveMultinode._make_synthetic_input(
+            self, three_node_configs, 40.72, -73.93, 8.0,
+            vel_east=150.0, vel_north=80.0, vel_up=80.0,
+        )
+        result = solve_multinode(s_in, three_node_configs)
+
+        assert result is not None and result["success"]
+        assert result["vz_saturated"] is True
+        assert abs(result["vel_up"]) == pytest.approx(20.0, abs=0.05)
+        assert result["vz_saturated"] == (abs(result["vel_up"]) >= 19.99)

@@ -669,6 +669,11 @@ def solve_multinode(solver_input, node_configs):
         return None
 
     state = result.x
+    # vz at the ±_VZ_BOUND_MS bound means the Doppler system wanted more
+    # vertical rate than the level-flight pin allows, so the misfit that
+    # would have gone into vz leaks into the horizontal components instead —
+    # velocity is statistically ~2.4x worse when this is set.
+    vz_saturated = bool(result.active_mask[4] != 0) or abs(float(state[4])) >= _VZ_BOUND_MS - 0.01
     px, py = state[0], state[1]
     pz = z_fixed_km
     vx_kms = state[2] * 1e-3
@@ -767,6 +772,7 @@ def solve_multinode(solver_input, node_configs):
         "vel_east": float(state[2]),
         "vel_north": float(state[3]),
         "vel_up": float(state[4]),
+        "vz_saturated": vz_saturated,
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
