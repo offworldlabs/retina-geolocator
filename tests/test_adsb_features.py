@@ -12,7 +12,6 @@ ever read.)
 """
 
 import numpy as np
-import pytest
 
 from retina_geolocator.config_loader import Detection, Track, validate_adsb_data
 from retina_geolocator.initial_guess_single import (
