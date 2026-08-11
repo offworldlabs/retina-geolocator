@@ -68,7 +68,7 @@ _.plot_output_dir
 # TODO: config field: parsed but no reader found — wire it up or drop it
 #   retina_geolocator/config_loader.py:97  (unused attribute)
 _.plotting_enabled
-# TODO: model field with no reader found
+# TODO: no reference found anywhere in the estate
 #   retina_geolocator/bistatic_models.py:98  (unused function)
 predict_detection
 # TODO: config field: parsed but no reader found — wire it up or drop it
