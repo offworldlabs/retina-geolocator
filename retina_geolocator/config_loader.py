@@ -3,11 +3,12 @@ Configuration and data loader for single-node passive radar.
 Loads radar system config (config.yml) and geolocator config (geolocator_config.yml).
 """
 
-import os
-import yaml
 import json
 import math
+import os
 from pathlib import Path
+
+import yaml
 
 
 def validate_adsb_data(adsb):
@@ -133,7 +134,7 @@ def load_geolocator_config(config_path=None):
     """
     if config_path is None:
         config_path = os.path.join(os.path.dirname(__file__), 'geolocator_config.yml')
-    with open(config_path, 'r') as f:
+    with open(config_path) as f:
         config_dict = yaml.safe_load(f)
     return GeolocatorConfig(config_dict)
 
@@ -244,7 +245,7 @@ def load_config(config_path=None, primary_path=None, fallback_path=None):
     """
     # Direct path specified - use it
     if config_path is not None:
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             config_dict = yaml.safe_load(f)
         return Config(config_dict)
 
@@ -252,7 +253,7 @@ def load_config(config_path=None, primary_path=None, fallback_path=None):
     if primary_path is not None:
         primary = Path(primary_path)
         if primary.exists():
-            with open(primary, 'r') as f:
+            with open(primary) as f:
                 config_dict = yaml.safe_load(f)
             return Config(config_dict)
 
@@ -260,7 +261,7 @@ def load_config(config_path=None, primary_path=None, fallback_path=None):
     if fallback_path is not None:
         fallback = Path(fallback_path)
         if fallback.exists():
-            with open(fallback, 'r') as f:
+            with open(fallback) as f:
                 config_dict = yaml.safe_load(f)
             return Config(config_dict)
 
@@ -287,7 +288,7 @@ def load_tracks(jsonl_path, min_detections=10):
     """
     tracks = []
 
-    with open(jsonl_path, 'r') as f:
+    with open(jsonl_path) as f:
         for line in f:
             event = json.loads(line)
 

@@ -2,10 +2,11 @@
 """Test enhanced output metadata."""
 
 import json
+
 import numpy as np
 
 from retina_geolocator.config_loader import Detection, Track
-from retina_geolocator.initial_guess_single import generate_initial_guess, generate_adsb_initial_guess
+from retina_geolocator.initial_guess_single import generate_adsb_initial_guess, generate_initial_guess
 
 
 def test_output_structure():
@@ -286,21 +287,21 @@ def test_output_type_safety():
     sample_output = {
         'track_id': '250618-A12345',
         'n_detections': 20,
-        'latitude': float(37.7752),
-        'longitude': float(-122.4198),
+        'latitude': 37.7752,
+        'longitude': (-122.4198),
         'altitude': float(5015),
         'initial_guess': {
             'source': 'adsb',
-            'latitude': float(37.7749),
-            'longitude': float(-122.4194),
+            'latitude': 37.7749,
+            'longitude': (-122.4194),
             'altitude': float(5000),
-            'velocity_east': float(17.0),
-            'velocity_north': float(60.0),
-            'velocity_up': float(0.0)
+            'velocity_east': 17.0,
+            'velocity_north': 60.0,
+            'velocity_up': 0.0
         },
         'convergence': {
             'iterations': 3,
-            'position_delta_m': float(23.5)
+            'position_delta_m': 23.5
         }
     }
 

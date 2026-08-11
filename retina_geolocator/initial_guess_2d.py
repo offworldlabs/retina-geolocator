@@ -123,8 +123,8 @@ if __name__ == "__main__":
     # Geometry
     import sys
     sys.path.append('.')
-    from config_loader import load_config
     from baseline_geometry import calculate_baseline_geometry
+    from config_loader import load_config
     from Geometry import Geometry
 
     config = load_config("config.yml")

@@ -4,7 +4,8 @@
 import json
 from pathlib import Path
 
-from retina_geolocator.config_loader import Detection, Track, validate_adsb_data, load_tracks
+from retina_geolocator.config_loader import Detection, Track, load_tracks, validate_adsb_data
+
 
 def test_validate_adsb_data():
     """Test ADS-B validation function."""
