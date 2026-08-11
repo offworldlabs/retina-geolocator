@@ -4,11 +4,7 @@
 import math
 
 from retina_geolocator.config_loader import Detection, Track
-from retina_geolocator.initial_guess_single import (
-    lla_to_enu_km,
-    adsb_velocity_to_enu,
-    generate_adsb_initial_guess
-)
+from retina_geolocator.initial_guess_single import adsb_velocity_to_enu, generate_adsb_initial_guess, lla_to_enu_km
 
 
 def test_lla_to_enu_km():

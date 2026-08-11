@@ -10,24 +10,25 @@ Usage:
     python process_tracks_3d.py input_tracks.jsonl --output results.jsonl
 """
 
-import sys
-import json
 import argparse
+import json
+import sys
 from pathlib import Path
+
 import numpy as np
 
 # Add lib to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib import (
-    Geometry,
-    load_geolocator_config,
-    load_config,
     Detection,
+    Geometry,
     Track,
     calculate_baseline_geometry,
+    load_config,
+    load_geolocator_config,
     select_initial_guess,
-    solve_track
+    solve_track,
 )
 
 
@@ -220,7 +221,7 @@ def main():
     n_processed = 0
     n_success = 0
 
-    with open(args.input, 'r') as f_in, open(output_path, 'w') as f_out:
+    with open(args.input) as f_in, open(output_path, 'w') as f_out:
         for line in f_in:
             event = json.loads(line)
             result = process_event(event, geo_config, radar_config, geometry, tx_enu, previous_solutions)

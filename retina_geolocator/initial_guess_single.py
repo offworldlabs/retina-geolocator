@@ -3,9 +3,11 @@ Initial guess generator for single-node passive radar geolocation.
 Uses bistatic delay ellipsoid and antenna boresight constraint.
 """
 
-import numpy as np
 import math
+
+import numpy as np
 from scipy.optimize import minimize_scalar
+
 from .bistatic_models import bistatic_delay
 from .Geometry import Geometry
 
@@ -353,8 +355,8 @@ if __name__ == "__main__":
     # Test initial guess generation
     import sys
     sys.path.append('.')
-    from config_loader import load_config, load_tracks
     from baseline_geometry import calculate_baseline_geometry
+    from config_loader import load_config, load_tracks
     from Geometry import Geometry
 
     print("Testing initial guess generation\n")

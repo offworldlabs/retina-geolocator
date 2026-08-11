@@ -18,8 +18,8 @@ Altitude is fixed (parameter, not optimized).
 import numpy as np
 from scipy.optimize import least_squares
 
-from .bistatic_models import bistatic_delay, bistatic_doppler
 from .baseline_geometry import antenna_gain_pattern
+from .bistatic_models import bistatic_delay, bistatic_doppler
 
 
 def state_to_cartesian_enu(range_km, azimuth_deg, altitude_m, rx_alt_m):
@@ -249,8 +249,8 @@ if __name__ == "__main__":
     # Geometry
     import sys
     sys.path.append('.')
-    from config_loader import load_config
     from baseline_geometry import calculate_baseline_geometry
+    from config_loader import load_config
     from Geometry import Geometry
 
     config = load_config("config.yml")

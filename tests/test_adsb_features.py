@@ -17,10 +17,10 @@ import pytest
 
 from retina_geolocator.config_loader import Detection, Track, validate_adsb_data
 from retina_geolocator.initial_guess_single import (
-    lla_to_enu_km,
     adsb_velocity_to_enu,
     generate_adsb_initial_guess,
-    select_initial_guess
+    lla_to_enu_km,
+    select_initial_guess,
 )
 
 

@@ -5,9 +5,9 @@ Fits constant velocity model to time series of bistatic detections.
 
 import numpy as np
 from scipy.optimize import least_squares
-from .bistatic_models import bistatic_delay, bistatic_doppler
-from .baseline_geometry import calculate_target_azimuth, antenna_gain_pattern
 
+from .baseline_geometry import antenna_gain_pattern, calculate_target_azimuth
+from .bistatic_models import bistatic_delay, bistatic_doppler
 
 # ---------------------------------------------------------------------------
 # Vectorised residual – processes all detections in a single numpy pass
@@ -205,10 +205,10 @@ if __name__ == "__main__":
     # Test the solver
     import sys
     sys.path.append('.')
-    from config_loader import load_config, load_tracks
     from baseline_geometry import calculate_baseline_geometry
-    from initial_guess_single import generate_initial_guess
+    from config_loader import load_config, load_tracks
     from Geometry import Geometry
+    from initial_guess_single import generate_initial_guess
 
     print("Testing LM track solver\n")
 

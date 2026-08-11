@@ -3,6 +3,7 @@ Bistatic radar physics models for delay and Doppler prediction.
 """
 
 import numpy as np
+
 from .Geometry import Geometry
 
 
