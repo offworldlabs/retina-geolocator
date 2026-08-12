@@ -13,9 +13,22 @@ from .bistatic_models import bistatic_delay, bistatic_doppler
 # Vectorised residual – processes all detections in a single numpy pass
 # ---------------------------------------------------------------------------
 
-def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
-                  frequency, f_over_c, antenna_boresight, antenna_sigma,
-                  rx_alt_m, residuals_out):
+
+def _residual_vec(
+    state,
+    dt,
+    obs_delay,
+    obs_doppler,
+    tx,
+    rx,
+    dist_tx_rx,
+    frequency,
+    f_over_c,
+    antenna_boresight,
+    antenna_sigma,
+    rx_alt_m,
+    residuals_out,
+):
     """Fully-vectorised residual function.
 
     Pre-extracted arrays are passed once from *solve_track* so that no Python
@@ -40,8 +53,8 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     dx_rx = rx[0] - px
     dy_rx = rx[1] - py
     dz_rx = rx[2] - pz
-    dist_tx_t = np.sqrt(dx_tx*dx_tx + dy_tx*dy_tx + dz_tx*dz_tx)
-    dist_t_rx = np.sqrt(dx_rx*dx_rx + dy_rx*dy_rx + dz_rx*dz_rx)
+    dist_tx_t = np.sqrt(dx_tx * dx_tx + dy_tx * dy_tx + dz_tx * dz_tx)
+    dist_t_rx = np.sqrt(dx_rx * dx_rx + dy_rx * dy_rx + dz_rx * dz_rx)
     delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.299792458  # µs
 
     # Bistatic Doppler  (vectorised)
@@ -165,11 +178,22 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     result = least_squares(
         _residual_vec,
         initial_state,
-        args=(dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
-              frequency, f_over_c, antenna_boresight, antenna_sigma,
-              rx_alt_m, residuals_buf),
+        args=(
+            dt,
+            obs_delay,
+            obs_doppler,
+            tx,
+            rx,
+            dist_tx_rx,
+            frequency,
+            f_over_c,
+            antenna_boresight,
+            antenna_sigma,
+            rx_alt_m,
+            residuals_buf,
+        ),
         bounds=(bounds_lower, bounds_upper),
-        method='trf',
+        method="trf",
         ftol=1e-4,
         xtol=1e-4,
         max_nfev=max_nfev,
@@ -190,21 +214,22 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     rms_doppler = np.sqrt(np.mean(doppler_residuals**2))
 
     return {
-        'success': success,
-        'state': state_solution,
-        'residuals': residuals,
-        'rms_delay': rms_delay,
-        'rms_doppler': rms_doppler,
-        'cost': result.cost,
-        'message': result.message,
-        'nfev': result.nfev
+        "success": success,
+        "state": state_solution,
+        "residuals": residuals,
+        "rms_delay": rms_delay,
+        "rms_doppler": rms_doppler,
+        "cost": result.cost,
+        "message": result.message,
+        "nfev": result.nfev,
     }
 
 
 if __name__ == "__main__":
     # Test the solver
     import sys
-    sys.path.append('.')
+
+    sys.path.append(".")
     from baseline_geometry import calculate_baseline_geometry
     from config_loader import load_config, load_tracks
     from Geometry import Geometry
@@ -222,8 +247,9 @@ if __name__ == "__main__":
 
     # Convert TX to ENU (in km)
     tx_ecef = Geometry.lla2ecef(config.tx_lla[0], config.tx_lla[1], config.tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   config.rx_lla[0], config.rx_lla[1], config.rx_lla[2])
+    tx_enu_m = Geometry.ecef2enu(
+        tx_ecef[0], tx_ecef[1], tx_ecef[2], config.rx_lla[0], config.rx_lla[1], config.rx_lla[2]
+    )
     tx_enu = tuple(x / 1000 for x in tx_enu_m)
     rx_enu = (0, 0, 0)
 
@@ -233,15 +259,13 @@ if __name__ == "__main__":
     # Try first few tracks
     for i in range(min(3, len(tracks))):
         track = tracks[i]
-        print(f"\n{'='*60}")
-        print(f"Track {i+1}: {track}")
+        print(f"\n{'=' * 60}")
+        print(f"Track {i + 1}: {track}")
         print(f"First detection: {track.detections[0]}")
         print(f"Last detection:  {track.detections[-1]}")
 
         # Generate initial guess
-        initial_guess = generate_initial_guess(
-            track, tx_enu, geometry['antenna_boresight_vector'], config.frequency
-        )
+        initial_guess = generate_initial_guess(track, tx_enu, geometry["antenna_boresight_vector"], config.frequency)
         print("\nInitial guess:")
         print(f"  Position: ({initial_guess[0]:.2f}, {initial_guess[1]:.2f}, {initial_guess[2]:.2f}) km")
         print(f"  Velocity: ({initial_guess[3]:.1f}, {initial_guess[4]:.1f}, {initial_guess[5]:.1f}) m/s")

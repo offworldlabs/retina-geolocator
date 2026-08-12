@@ -14,37 +14,34 @@ def test_output_structure():
     print("Testing output structure...")
 
     expected_fields = [
-        'track_id',
-        'track_number',
-        'n_detections',
-        'latitude',
-        'longitude',
-        'altitude',
-        'velocity_east',
-        'velocity_north',
-        'velocity_up',
-        'rms_delay_us',
-        'rms_doppler_hz',
-        'success',
-        'initial_guess_source',
-        'initial_guess',
-        'convergence'
+        "track_id",
+        "track_number",
+        "n_detections",
+        "latitude",
+        "longitude",
+        "altitude",
+        "velocity_east",
+        "velocity_north",
+        "velocity_up",
+        "rms_delay_us",
+        "rms_doppler_hz",
+        "success",
+        "initial_guess_source",
+        "initial_guess",
+        "convergence",
     ]
 
     expected_initial_guess_fields = [
-        'source',
-        'latitude',
-        'longitude',
-        'altitude',
-        'velocity_east',
-        'velocity_north',
-        'velocity_up'
+        "source",
+        "latitude",
+        "longitude",
+        "altitude",
+        "velocity_east",
+        "velocity_north",
+        "velocity_up",
     ]
 
-    expected_convergence_fields = [
-        'iterations',
-        'position_delta_m'
-    ]
+    expected_convergence_fields = ["iterations", "position_delta_m"]
 
     print(f"  Expected top-level fields: {len(expected_fields)}")
     print(f"  Expected initial_guess fields: {len(expected_initial_guess_fields)}")
@@ -71,7 +68,7 @@ def test_initial_guess_formats():
     """Test initial guess source values."""
     print("\nTesting initial guess source values...")
 
-    valid_sources = ['adsb', 'geometric', 'previous']
+    valid_sources = ["adsb", "geometric", "previous"]
 
     for source in valid_sources:
         print(f"  ✓ Valid source: {source}")
@@ -95,17 +92,17 @@ def test_backward_compatibility():
     print("\nTesting backward compatibility...")
 
     legacy_fields = [
-        'track_id',
-        'n_detections',
-        'latitude',
-        'longitude',
-        'altitude',
-        'velocity_east',
-        'velocity_north',
-        'velocity_up',
-        'rms_delay_us',
-        'rms_doppler_hz',
-        'success'
+        "track_id",
+        "n_detections",
+        "latitude",
+        "longitude",
+        "altitude",
+        "velocity_east",
+        "velocity_north",
+        "velocity_up",
+        "rms_delay_us",
+        "rms_doppler_hz",
+        "success",
     ]
 
     print(f"  All {len(legacy_fields)} legacy fields preserved")
@@ -117,44 +114,41 @@ def test_json_serialization():
     print("\nTesting JSON serialization...")
 
     sample_output = {
-        'track_id': '250618-A12345',
-        'n_detections': 20,
-        'latitude': 37.7752,
-        'longitude': -122.4198,
-        'altitude': 5015,
-        'velocity_east': 17.2,
-        'velocity_north': 60.1,
-        'velocity_up': -6.5,
-        'rms_delay_us': 0.15,
-        'rms_doppler_hz': 0.28,
-        'success': True,
-        'initial_guess_source': 'adsb',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True,
-        'initial_guess': {
-            'source': 'adsb',
-            'latitude': 37.7749,
-            'longitude': -122.4194,
-            'altitude': 5000,
-            'velocity_east': 17.0,
-            'velocity_north': 60.0,
-            'velocity_up': 0.0
+        "track_id": "250618-A12345",
+        "n_detections": 20,
+        "latitude": 37.7752,
+        "longitude": -122.4198,
+        "altitude": 5015,
+        "velocity_east": 17.2,
+        "velocity_north": 60.1,
+        "velocity_up": -6.5,
+        "rms_delay_us": 0.15,
+        "rms_doppler_hz": 0.28,
+        "success": True,
+        "initial_guess_source": "adsb",
+        "adsb_hex": "a12345",
+        "adsb_initialized": True,
+        "initial_guess": {
+            "source": "adsb",
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "altitude": 5000,
+            "velocity_east": 17.0,
+            "velocity_north": 60.0,
+            "velocity_up": 0.0,
         },
-        'convergence': {
-            'iterations': 3,
-            'position_delta_m': 23.5
-        }
+        "convergence": {"iterations": 3, "position_delta_m": 23.5},
     }
 
     try:
         json_str = json.dumps(sample_output)
         parsed = json.loads(json_str)
 
-        assert parsed['track_id'] == sample_output['track_id']
-        assert 'initial_guess' in parsed
-        assert 'convergence' in parsed
-        assert parsed['initial_guess']['source'] == 'adsb'
-        assert parsed['convergence']['iterations'] == 3
+        assert parsed["track_id"] == sample_output["track_id"]
+        assert "initial_guess" in parsed
+        assert "convergence" in parsed
+        assert parsed["initial_guess"]["source"] == "adsb"
+        assert parsed["convergence"]["iterations"] == 3
 
         print("  Sample output:")
         print("  " + json_str[:100] + "...")
@@ -193,22 +187,22 @@ def test_field_types():
     print("\nTesting field types...")
 
     type_checks = {
-        'track_id': str,
-        'n_detections': int,
-        'latitude': float,
-        'longitude': float,
-        'altitude': float,
-        'velocity_east': float,
-        'velocity_north': float,
-        'velocity_up': float,
-        'rms_delay_us': float,
-        'rms_doppler_hz': float,
-        'success': bool,
-        'initial_guess_source': str,
-        'adsb_hex': str,
-        'adsb_initialized': bool,
-        'initial_guess': dict,
-        'convergence': dict
+        "track_id": str,
+        "n_detections": int,
+        "latitude": float,
+        "longitude": float,
+        "altitude": float,
+        "velocity_east": float,
+        "velocity_north": float,
+        "velocity_up": float,
+        "rms_delay_us": float,
+        "rms_doppler_hz": float,
+        "success": bool,
+        "initial_guess_source": str,
+        "adsb_hex": str,
+        "adsb_initialized": bool,
+        "initial_guess": dict,
+        "convergence": dict,
     }
 
     print(f"  Validated {len(type_checks)} field types")
@@ -220,19 +214,9 @@ def test_integration_with_adsb():
     print("\nTesting integration with ADS-B track...")
 
     # Create mock track with ADS-B
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
-    event_data = {
-        'track_id': '250618-A12345',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True
-    }
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     track = Track("250618-A12345", [det], event_data)
 
     # Generate initial guess
@@ -285,24 +269,21 @@ def test_output_type_safety():
     print("\nTesting output type safety...")
 
     sample_output = {
-        'track_id': '250618-A12345',
-        'n_detections': 20,
-        'latitude': 37.7752,
-        'longitude': (-122.4198),
-        'altitude': float(5015),
-        'initial_guess': {
-            'source': 'adsb',
-            'latitude': 37.7749,
-            'longitude': (-122.4194),
-            'altitude': float(5000),
-            'velocity_east': 17.0,
-            'velocity_north': 60.0,
-            'velocity_up': 0.0
+        "track_id": "250618-A12345",
+        "n_detections": 20,
+        "latitude": 37.7752,
+        "longitude": (-122.4198),
+        "altitude": float(5015),
+        "initial_guess": {
+            "source": "adsb",
+            "latitude": 37.7749,
+            "longitude": (-122.4194),
+            "altitude": float(5000),
+            "velocity_east": 17.0,
+            "velocity_north": 60.0,
+            "velocity_up": 0.0,
         },
-        'convergence': {
-            'iterations': 3,
-            'position_delta_m': 23.5
-        }
+        "convergence": {"iterations": 3, "position_delta_m": 23.5},
     }
 
     # Ensure JSON serialization works
@@ -311,9 +292,9 @@ def test_output_type_safety():
         parsed = json.loads(json_str)
 
         # Verify types after round-trip
-        assert isinstance(parsed['initial_guess']['latitude'], float)
-        assert isinstance(parsed['initial_guess']['velocity_east'], float)
-        assert isinstance(parsed['convergence']['position_delta_m'], float)
+        assert isinstance(parsed["initial_guess"]["latitude"], float)
+        assert isinstance(parsed["initial_guess"]["velocity_east"], float)
+        assert isinstance(parsed["convergence"]["position_delta_m"], float)
 
         print("  ✓ All values are JSON-serializable native types")
     except TypeError as e:
@@ -326,17 +307,13 @@ def test_adsb_conditional_fields():
     print("\nTesting ADS-B conditional field logic...")
 
     # Track with ADS-B
-    event_data_with_adsb = {
-        'track_id': '250618-A12345',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True
-    }
+    event_data_with_adsb = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
 
     det = Detection(1718747745000, 16.1, 134.5, 18.2)
     track_with_adsb = Track("250618-A12345", [det], event_data_with_adsb)
 
     assert track_with_adsb.adsb_initialized
-    assert track_with_adsb.adsb_hex == 'a12345'
+    assert track_with_adsb.adsb_hex == "a12345"
 
     # Track without ADS-B
     track_without_adsb = Track("250618-000001", [det])
@@ -347,7 +324,7 @@ def test_adsb_conditional_fields():
     print("  ✓ ADS-B fields properly conditional based on track.adsb_initialized")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_output_structure()
     test_adsb_fields()
     test_initial_guess_formats()
@@ -361,6 +338,6 @@ if __name__ == '__main__':
     test_output_type_safety()
     test_adsb_conditional_fields()
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("All tests passed! ✓")
-    print("="*50)
+    print("=" * 50)

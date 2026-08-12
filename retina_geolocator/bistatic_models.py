@@ -124,8 +124,7 @@ if __name__ == "__main__":
 
     # Convert TX to ENU relative to RX
     tx_ecef = Geometry.lla2ecef(tx_lla[0], tx_lla[1], tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   rx_lla[0], rx_lla[1], rx_lla[2])
+    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2], rx_lla[0], rx_lla[1], rx_lla[2])
     tx_enu = tuple(x / 1000 for x in tx_enu_m)  # Convert m to km
 
     print("RX at origin: (0, 0, 0) km")

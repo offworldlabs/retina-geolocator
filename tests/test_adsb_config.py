@@ -13,9 +13,9 @@ def test_default_config():
 
     config = load_geolocator_config()
 
-    assert hasattr(config, 'use_adsb_initial_guess'), "Missing use_adsb_initial_guess"
-    assert hasattr(config, 'adsb_fallback_to_geometric'), "Missing adsb_fallback_to_geometric"
-    assert hasattr(config, 'validate_against_adsb'), "Missing validate_against_adsb"
+    assert hasattr(config, "use_adsb_initial_guess"), "Missing use_adsb_initial_guess"
+    assert hasattr(config, "adsb_fallback_to_geometric"), "Missing adsb_fallback_to_geometric"
+    assert hasattr(config, "validate_against_adsb"), "Missing validate_against_adsb"
 
     assert config.use_adsb_initial_guess, "Default use_adsb should be True"
     assert config.adsb_fallback_to_geometric, "Default fallback should be True"
@@ -30,11 +30,7 @@ def test_custom_config():
     print("\nTesting custom configuration...")
 
     config_dict = {
-        'solver': {
-            'use_adsb_initial_guess': False,
-            'adsb_fallback_to_geometric': False,
-            'validate_against_adsb': False
-        }
+        "solver": {"use_adsb_initial_guess": False, "adsb_fallback_to_geometric": False, "validate_against_adsb": False}
     }
 
     config = GeolocatorConfig(config_dict)
@@ -51,12 +47,7 @@ def test_backward_compatibility():
     """Test that configs without ADS-B fields use defaults."""
     print("\nTesting backward compatibility...")
 
-    config_dict = {
-        'solver': {
-            'beamwidth_deg': 48,
-            'min_detections': 3
-        }
-    }
+    config_dict = {"solver": {"beamwidth_deg": 48, "min_detections": 3}}
 
     config = GeolocatorConfig(config_dict)
 
@@ -72,11 +63,7 @@ def test_invalid_type_use_adsb():
     """Test validation rejects invalid use_adsb_initial_guess type."""
     print("\nTesting invalid type for use_adsb_initial_guess...")
 
-    config_dict = {
-        'solver': {
-            'use_adsb_initial_guess': 'yes'
-        }
-    }
+    config_dict = {"solver": {"use_adsb_initial_guess": "yes"}}
 
     try:
         GeolocatorConfig(config_dict)
@@ -90,11 +77,7 @@ def test_invalid_type_fallback():
     """Test validation rejects invalid adsb_fallback_to_geometric type."""
     print("\nTesting invalid type for adsb_fallback_to_geometric...")
 
-    config_dict = {
-        'solver': {
-            'adsb_fallback_to_geometric': 1
-        }
-    }
+    config_dict = {"solver": {"adsb_fallback_to_geometric": 1}}
 
     try:
         GeolocatorConfig(config_dict)
@@ -108,11 +91,7 @@ def test_invalid_type_validate():
     """Test validation rejects invalid validate_against_adsb type."""
     print("\nTesting invalid type for validate_against_adsb...")
 
-    config_dict = {
-        'solver': {
-            'validate_against_adsb': None
-        }
-    }
+    config_dict = {"solver": {"validate_against_adsb": None}}
 
     try:
         GeolocatorConfig(config_dict)
@@ -130,15 +109,15 @@ def test_config_combinations():
         (True, True, True, "Full ADS-B enabled"),
         (True, False, True, "ADS-B no fallback"),
         (False, True, False, "ADS-B disabled"),
-        (False, False, False, "All disabled")
+        (False, False, False, "All disabled"),
     ]
 
     for use_adsb, fallback, validate, desc in combinations:
         config_dict = {
-            'solver': {
-                'use_adsb_initial_guess': use_adsb,
-                'adsb_fallback_to_geometric': fallback,
-                'validate_against_adsb': validate
+            "solver": {
+                "use_adsb_initial_guess": use_adsb,
+                "adsb_fallback_to_geometric": fallback,
+                "validate_against_adsb": validate,
             }
         }
 
@@ -164,7 +143,7 @@ solver:
   validate_against_adsb: true
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
         f.write(yaml_content)
         temp_path = f.name
 
@@ -185,17 +164,17 @@ def test_repr_includes_adsb():
     """Test that __repr__ includes ADS-B status."""
     print("\nTesting __repr__ includes ADS-B...")
 
-    config_dict = {'solver': {'use_adsb_initial_guess': True}}
+    config_dict = {"solver": {"use_adsb_initial_guess": True}}
     config = GeolocatorConfig(config_dict)
 
     repr_str = repr(config)
-    assert 'adsb=True' in repr_str, "Should include adsb status in repr"
+    assert "adsb=True" in repr_str, "Should include adsb status in repr"
 
     print(f"  {repr_str}")
     print("  ✓ __repr__ includes ADS-B status")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_default_config()
     test_custom_config()
     test_backward_compatibility()
@@ -206,6 +185,6 @@ if __name__ == '__main__':
     test_yaml_round_trip()
     test_repr_includes_adsb()
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("All tests passed! ✓")
-    print("="*50)
+    print("=" * 50)

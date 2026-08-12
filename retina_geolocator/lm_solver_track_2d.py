@@ -41,7 +41,7 @@ def state_to_cartesian_enu(range_km, azimuth_deg, altitude_m, rx_alt_m):
     z_rel_m = altitude_m - rx_alt_m
 
     # Horizontal range (ground range)
-    horiz_range_km = np.sqrt(range_km**2 - (z_rel_m/1000)**2) if range_km**2 > (z_rel_m/1000)**2 else range_km
+    horiz_range_km = np.sqrt(range_km**2 - (z_rel_m / 1000) ** 2) if range_km**2 > (z_rel_m / 1000) ** 2 else range_km
 
     # Cartesian coordinates
     east = horiz_range_km * np.sin(az_rad)
@@ -73,8 +73,7 @@ def velocities_to_cartesian(v_radial, v_tangential, azimuth_deg):
     return (ve, vn, vu)
 
 
-def residual_function_2d(state, track, tx_enu, rx_enu, frequency,
-                         antenna_boresight, rx_alt_m, altitude_fixed_m):
+def residual_function_2d(state, track, tx_enu, rx_enu, frequency, antenna_boresight, rx_alt_m, altitude_fixed_m):
     """
     Calculate residuals for 2D range-azimuth solver.
 
@@ -146,8 +145,7 @@ def residual_function_2d(state, track, tx_enu, rx_enu, frequency,
     return np.array(residuals)
 
 
-def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency,
-                   antenna_boresight, rx_alt_m, altitude_fixed_m=1000):
+def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresight, rx_alt_m, altitude_fixed_m=1000):
     """
     Solve for track position and velocity using 2D range-azimuth optimization.
 
@@ -168,17 +166,17 @@ def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency,
     range_0, azimuth_0, v_radial_0, v_tangential_0 = initial_state
 
     bounds_lower = [
-        0.5,                        # range > 0.5 km (minimum)
-        antenna_boresight - 30,     # azimuth within ±30° of boresight (wider than beamwidth for robustness)
-        -400,                       # v_radial (m/s)
-        -400                        # v_tangential (m/s)
+        0.5,  # range > 0.5 km (minimum)
+        antenna_boresight - 30,  # azimuth within ±30° of boresight (wider than beamwidth for robustness)
+        -400,  # v_radial (m/s)
+        -400,  # v_tangential (m/s)
     ]
 
     bounds_upper = [
-        150,                        # range < 150 km (maximum)
-        antenna_boresight + 30,     # azimuth within ±30° of boresight
-        400,                        # v_radial (m/s)
-        400                         # v_tangential (m/s)
+        150,  # range < 150 km (maximum)
+        antenna_boresight + 30,  # azimuth within ±30° of boresight
+        400,  # v_radial (m/s)
+        400,  # v_tangential (m/s)
     ]
 
     # Run LM optimization
@@ -187,10 +185,10 @@ def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency,
         initial_state,
         args=(track, tx_enu, rx_enu, frequency, antenna_boresight, rx_alt_m, altitude_fixed_m),
         bounds=(bounds_lower, bounds_upper),
-        method='trf',
+        method="trf",
         ftol=1e-8,
         xtol=1e-8,
-        max_nfev=1000
+        max_nfev=1000,
     )
 
     # Extract results
@@ -208,15 +206,15 @@ def solve_track_2d(track, initial_state, tx_enu, rx_enu, frequency,
 
     # Return solution
     return {
-        'success': success,
-        'state': state_solution,  # [range, azimuth, v_radial, v_tangential]
-        'residuals': residuals,
-        'rms_delay': rms_delay,
-        'rms_doppler': rms_doppler,
-        'cost': result.cost,
-        'message': result.message,
-        'nfev': result.nfev,
-        'altitude_fixed': altitude_fixed_m
+        "success": success,
+        "state": state_solution,  # [range, azimuth, v_radial, v_tangential]
+        "residuals": residuals,
+        "rms_delay": rms_delay,
+        "rms_doppler": rms_doppler,
+        "cost": result.cost,
+        "message": result.message,
+        "nfev": result.nfev,
+        "altitude_fixed": altitude_fixed_m,
     }
 
 
@@ -248,7 +246,8 @@ if __name__ == "__main__":
 
     # Geometry
     import sys
-    sys.path.append('.')
+
+    sys.path.append(".")
     from baseline_geometry import calculate_baseline_geometry
     from config_loader import load_config
     from Geometry import Geometry
@@ -257,19 +256,30 @@ if __name__ == "__main__":
     geometry = calculate_baseline_geometry(config.rx_lla, config.tx_lla)
 
     tx_ecef = Geometry.lla2ecef(config.tx_lla[0], config.tx_lla[1], config.tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   config.rx_lla[0], config.rx_lla[1], config.rx_lla[2])
+    tx_enu_m = Geometry.ecef2enu(
+        tx_ecef[0], tx_ecef[1], tx_ecef[2], config.rx_lla[0], config.rx_lla[1], config.rx_lla[2]
+    )
     tx_enu = tuple(x / 1000 for x in tx_enu_m)
 
     # Initial guess
-    initial_state = [10, geometry['antenna_boresight'], 50, 0]  # 10km range, on boresight, 50 m/s radial, 0 tangential
+    initial_state = [10, geometry["antenna_boresight"], 50, 0]  # 10km range, on boresight, 50 m/s radial, 0 tangential
 
     # Solve
-    result = solve_track_2d(track, initial_state, tx_enu, (0,0,0), config.frequency,
-                           geometry['antenna_boresight'], config.rx_alt, altitude_fixed_m=1000)
+    result = solve_track_2d(
+        track,
+        initial_state,
+        tx_enu,
+        (0, 0, 0),
+        config.frequency,
+        geometry["antenna_boresight"],
+        config.rx_alt,
+        altitude_fixed_m=1000,
+    )
 
     print(f"Success: {result['success']}")
-    print(f"Solution: range={result['state'][0]:.2f} km, azimuth={result['state'][1]:.1f}°, v_r={result['state'][2]:.1f} m/s, v_t={result['state'][3]:.1f} m/s")
+    print(
+        f"Solution: range={result['state'][0]:.2f} km, azimuth={result['state'][1]:.1f}°, v_r={result['state'][2]:.1f} m/s, v_t={result['state'][3]:.1f} m/s"
+    )
     print(f"RMS delay: {result['rms_delay']:.3f} μs")
     print(f"RMS Doppler: {result['rms_doppler']:.3f} Hz")
     print(f"Iterations: {result['nfev']}")

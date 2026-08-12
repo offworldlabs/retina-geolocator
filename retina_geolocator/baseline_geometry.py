@@ -26,12 +26,11 @@ def calculate_baseline_geometry(rx_lla, tx_lla):
     # Convert TX position to ENU relative to RX
     # First convert both to ECEF, then TX to ENU relative to RX
     tx_ecef = Geometry.lla2ecef(tx_lla[0], tx_lla[1], tx_lla[2])
-    tx_enu = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                 rx_lla[0], rx_lla[1], rx_lla[2])
+    tx_enu = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2], rx_lla[0], rx_lla[1], rx_lla[2])
 
     # Calculate azimuth from RX to TX (ENU is in meters, convert to km)
     east, north, up = tx_enu
-    east_km, north_km, up_km = east/1000, north/1000, up/1000
+    east_km, north_km, up_km = east / 1000, north / 1000, up / 1000
 
     baseline_azimuth = np.degrees(np.arctan2(east, north))
     if baseline_azimuth < 0:
@@ -61,17 +60,19 @@ def calculate_baseline_geometry(rx_lla, tx_lla):
     # Convert boresight azimuth to unit vector in ENU
     az_rad = np.radians(antenna_boresight)
     # Assume horizontal beam (elevation = 0)
-    antenna_boresight_vector = np.array([
-        np.sin(az_rad),  # East
-        np.cos(az_rad),  # North
-        0.0              # Up
-    ])
+    antenna_boresight_vector = np.array(
+        [
+            np.sin(az_rad),  # East
+            np.cos(az_rad),  # North
+            0.0,  # Up
+        ]
+    )
 
     return {
-        'baseline_azimuth': baseline_azimuth,
-        'baseline_distance': baseline_distance,
-        'antenna_boresight': antenna_boresight,
-        'antenna_boresight_vector': antenna_boresight_vector
+        "baseline_azimuth": baseline_azimuth,
+        "baseline_distance": baseline_distance,
+        "antenna_boresight": antenna_boresight,
+        "antenna_boresight_vector": antenna_boresight_vector,
     }
 
 
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     # Test antenna pattern
     print("\nAntenna Gain Pattern (48° beamwidth):")
     for angle_off in [0, 10, 15, 24, 30, 45, 60, 90]:
-        test_az = (geometry['antenna_boresight'] + angle_off) % 360
-        gain = antenna_gain_pattern(test_az, geometry['antenna_boresight'])
+        test_az = (geometry["antenna_boresight"] + angle_off) % 360
+        gain = antenna_gain_pattern(test_az, geometry["antenna_boresight"])
         gain_db = 10 * np.log10(gain) if gain > 0 else -np.inf
         print(f"  {angle_off:3d}° off boresight: gain = {gain:.3f} ({gain_db:+.1f} dB)")
