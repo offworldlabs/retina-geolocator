@@ -25,34 +25,34 @@ def validate_adsb_data(adsb):
         return False
 
     # Check required fields
-    if 'lat' not in adsb or 'lon' not in adsb:
+    if "lat" not in adsb or "lon" not in adsb:
         return False
 
     # Validate latitude
-    lat = adsb['lat']
+    lat = adsb["lat"]
     if not isinstance(lat, (int, float)) or math.isnan(lat) or not (-90 <= lat <= 90):
         return False
 
     # Validate longitude
-    lon = adsb['lon']
+    lon = adsb["lon"]
     if not isinstance(lon, (int, float)) or math.isnan(lon) or not (-180 <= lon <= 180):
         return False
 
     # Validate altitude (optional but common)
-    if 'alt_baro' in adsb:
-        alt = adsb['alt_baro']
+    if "alt_baro" in adsb:
+        alt = adsb["alt_baro"]
         if not isinstance(alt, (int, float)) or math.isnan(alt) or not (-2000 <= alt <= 50000):
             return False
 
     # Validate ground speed (optional)
-    if 'gs' in adsb:
-        gs = adsb['gs']
+    if "gs" in adsb:
+        gs = adsb["gs"]
         if not isinstance(gs, (int, float)) or math.isnan(gs) or not (0 <= gs <= 1000):
             return False
 
     # Validate track angle (optional)
-    if 'track' in adsb:
-        track = adsb['track']
+    if "track" in adsb:
+        track = adsb["track"]
         if not isinstance(track, (int, float)) or math.isnan(track) or not (0 <= track < 360):
             return False
 
@@ -63,40 +63,40 @@ class GeolocatorConfig:
     """Geolocator-specific configuration."""
 
     def __init__(self, config_dict):
-        solver = config_dict.get('solver', {})
-        self.beamwidth_deg = solver.get('beamwidth_deg', 48)
-        self.altitude_bounds = solver.get('altitude_bounds', [50, 15000])
-        self.velocity_bounds = solver.get('velocity_bounds', [-400, 400])
-        self.min_detections = solver.get('min_detections', 3)
-        self.max_detections = solver.get('max_detections', 20)
-        self.temporal_continuity = solver.get('temporal_continuity', True)
-        self.initial_altitude_m = solver.get('initial_altitude_m', 1000)
+        solver = config_dict.get("solver", {})
+        self.beamwidth_deg = solver.get("beamwidth_deg", 48)
+        self.altitude_bounds = solver.get("altitude_bounds", [50, 15000])
+        self.velocity_bounds = solver.get("velocity_bounds", [-400, 400])
+        self.min_detections = solver.get("min_detections", 3)
+        self.max_detections = solver.get("max_detections", 20)
+        self.temporal_continuity = solver.get("temporal_continuity", True)
+        self.initial_altitude_m = solver.get("initial_altitude_m", 1000)
 
-        self.use_adsb_initial_guess = solver.get('use_adsb_initial_guess', True)
-        self.adsb_fallback_to_geometric = solver.get('adsb_fallback_to_geometric', True)
-        self.validate_against_adsb = solver.get('validate_against_adsb', True)
+        self.use_adsb_initial_guess = solver.get("use_adsb_initial_guess", True)
+        self.adsb_fallback_to_geometric = solver.get("adsb_fallback_to_geometric", True)
+        self.validate_against_adsb = solver.get("validate_against_adsb", True)
 
         self._validate_adsb_config()
 
-        self.ftol = solver.get('ftol', 1.0e-8)
-        self.xtol = solver.get('xtol', 1.0e-8)
-        self.max_iterations = solver.get('max_iterations', 1000)
-        self.max_rms_delay_us = solver.get('max_rms_delay_us', 2.0)
-        self.max_rms_doppler_hz = solver.get('max_rms_doppler_hz', 2.0)
+        self.ftol = solver.get("ftol", 1.0e-8)
+        self.xtol = solver.get("xtol", 1.0e-8)
+        self.max_iterations = solver.get("max_iterations", 1000)
+        self.max_rms_delay_us = solver.get("max_rms_delay_us", 2.0)
+        self.max_rms_doppler_hz = solver.get("max_rms_doppler_hz", 2.0)
 
-        radar_cfg = config_dict.get('radar_config', {})
-        self.primary_config_path = radar_cfg.get('primary')
-        self.fallback_config_path = radar_cfg.get('fallback')
+        radar_cfg = config_dict.get("radar_config", {})
+        self.primary_config_path = radar_cfg.get("primary")
+        self.fallback_config_path = radar_cfg.get("fallback")
 
-        output = config_dict.get('output', {})
-        self.output_format = output.get('format', 'jsonl')
-        self.output_directory = output.get('directory', 'data/output')
-        self.verbose = output.get('verbose', True)
+        output = config_dict.get("output", {})
+        self.output_format = output.get("format", "jsonl")
+        self.output_directory = output.get("directory", "data/output")
+        self.verbose = output.get("verbose", True)
 
-        plotting = config_dict.get('plotting', {})
-        self.plotting_enabled = plotting.get('enabled', False)
-        self.plot_output_dir = plotting.get('output_dir', 'data/plots')
-        self.plot_dpi = plotting.get('dpi', 150)
+        plotting = config_dict.get("plotting", {})
+        self.plotting_enabled = plotting.get("enabled", False)
+        self.plot_output_dir = plotting.get("output_dir", "data/plots")
+        self.plot_dpi = plotting.get("dpi", 150)
 
     def _validate_adsb_config(self):
         """Validate ADS-B configuration values."""
@@ -111,14 +111,14 @@ class GeolocatorConfig:
             )
 
         if not isinstance(self.validate_against_adsb, bool):
-            raise ValueError(
-                f"validate_against_adsb must be boolean, got {type(self.validate_against_adsb).__name__}"
-            )
+            raise ValueError(f"validate_against_adsb must be boolean, got {type(self.validate_against_adsb).__name__}")
 
     def __repr__(self):
-        return (f"GeolocatorConfig(beamwidth={self.beamwidth_deg}°, "
-                f"min_det={self.min_detections}, temporal={self.temporal_continuity}, "
-                f"adsb={self.use_adsb_initial_guess})")
+        return (
+            f"GeolocatorConfig(beamwidth={self.beamwidth_deg}°, "
+            f"min_det={self.min_detections}, temporal={self.temporal_continuity}, "
+            f"adsb={self.use_adsb_initial_guess})"
+        )
 
 
 def load_geolocator_config(config_path=None):
@@ -133,7 +133,7 @@ def load_geolocator_config(config_path=None):
         GeolocatorConfig object
     """
     if config_path is None:
-        config_path = os.path.join(os.path.dirname(__file__), 'geolocator_config.yml')
+        config_path = os.path.join(os.path.dirname(__file__), "geolocator_config.yml")
     with open(config_path) as f:
         config_dict = yaml.safe_load(f)
     return GeolocatorConfig(config_dict)
@@ -170,8 +170,8 @@ class Track:
         self.adsb_initialized = False
 
         if event_data is not None:
-            self.adsb_hex = event_data.get('adsb_hex')
-            self.adsb_initialized = event_data.get('adsb_initialized', False)
+            self.adsb_hex = event_data.get("adsb_hex")
+            self.adsb_initialized = event_data.get("adsb_initialized", False)
 
     def __len__(self):
         return len(self.detections)
@@ -194,38 +194,40 @@ class Config:
 
     def __init__(self, config_dict):
         # Extract receiver position
-        location = config_dict.get('location', {})
-        rx_info = location.get('rx', {})
-        self.rx_lat = rx_info.get('latitude')
-        self.rx_lon = rx_info.get('longitude')
-        self.rx_alt = rx_info.get('altitude')
-        self.rx_name = rx_info.get('name', 'RX')
+        location = config_dict.get("location", {})
+        rx_info = location.get("rx", {})
+        self.rx_lat = rx_info.get("latitude")
+        self.rx_lon = rx_info.get("longitude")
+        self.rx_alt = rx_info.get("altitude")
+        self.rx_name = rx_info.get("name", "RX")
         self.rx_lla = (self.rx_lat, self.rx_lon, self.rx_alt)
 
         # Extract transmitter position
-        tx_info = location.get('tx', {})
+        tx_info = location.get("tx", {})
         if tx_info:
-            self.tx_lat = tx_info.get('latitude')
-            self.tx_lon = tx_info.get('longitude')
-            self.tx_alt = tx_info.get('altitude')
-            self.tx_name = tx_info.get('name', 'TX')
+            self.tx_lat = tx_info.get("latitude")
+            self.tx_lon = tx_info.get("longitude")
+            self.tx_alt = tx_info.get("altitude")
+            self.tx_name = tx_info.get("name", "TX")
             self.tx_lla = (self.tx_lat, self.tx_lon, self.tx_alt)
         else:
             raise ValueError("No transmitter found in config")
 
         # Extract radio configuration
-        capture = config_dict.get('capture', {})
-        self.frequency = capture.get('fc')  # Hz
+        capture = config_dict.get("capture", {})
+        self.frequency = capture.get("fc")  # Hz
 
         # Extract processing parameters
-        process = config_dict.get('process', {})
-        data = process.get('data', {})
-        self.cpi = data.get('cpi')  # seconds
+        process = config_dict.get("process", {})
+        data = process.get("data", {})
+        self.cpi = data.get("cpi")  # seconds
 
     def __repr__(self):
-        return (f"Config(RX=({self.rx_lat:.5f}, {self.rx_lon:.5f}, {self.rx_alt}m), "
-                f"TX=({self.tx_lat:.5f}, {self.tx_lon:.5f}, {self.tx_alt}m, '{self.tx_name}'), "
-                f"freq={self.frequency/1e6:.1f}MHz)")
+        return (
+            f"Config(RX=({self.rx_lat:.5f}, {self.rx_lon:.5f}, {self.rx_alt}m), "
+            f"TX=({self.tx_lat:.5f}, {self.tx_lon:.5f}, {self.tx_alt}m, '{self.tx_name}'), "
+            f"freq={self.frequency / 1e6:.1f}MHz)"
+        )
 
 
 def load_config(config_path=None, primary_path=None, fallback_path=None):
@@ -293,8 +295,8 @@ def load_tracks(jsonl_path, min_detections=10):
             event = json.loads(line)
 
             # Extract track information
-            track_id = event.get('track_id')
-            n_total = event.get('n_total', 0)
+            track_id = event.get("track_id")
+            n_total = event.get("n_total", 0)
 
             # Filter by minimum detections
             if n_total < min_detections:
@@ -302,22 +304,22 @@ def load_tracks(jsonl_path, min_detections=10):
 
             # Parse detections
             detections = []
-            for det_dict in event.get('detections', []):
+            for det_dict in event.get("detections", []):
                 # Parse ADS-B data if present
                 adsb = None
-                if 'adsb' in det_dict:
-                    adsb_data = det_dict['adsb']
+                if "adsb" in det_dict:
+                    adsb_data = det_dict["adsb"]
                     # Validate ADS-B data before using it
                     if validate_adsb_data(adsb_data):
                         adsb = adsb_data
                     # If validation fails, adsb remains None (silently ignore invalid data)
 
                 det = Detection(
-                    timestamp=det_dict['timestamp'],
-                    delay=det_dict['delay'],
-                    doppler=det_dict['doppler'],
-                    snr=det_dict['snr'],
-                    adsb=adsb  # Pass validated ADS-B or None
+                    timestamp=det_dict["timestamp"],
+                    delay=det_dict["delay"],
+                    doppler=det_dict["doppler"],
+                    snr=det_dict["snr"],
+                    adsb=adsb,  # Pass validated ADS-B or None
                 )
                 detections.append(det)
 
@@ -346,6 +348,7 @@ def delay_to_range(delay_us):
 if __name__ == "__main__":
     # Test loading
     import os
+
     script_dir = Path(__file__).parent
 
     config_path = script_dir / "config.yml"
@@ -364,7 +367,7 @@ if __name__ == "__main__":
     # Show first few tracks
     print("First 5 tracks:")
     for i, track in enumerate(tracks[:5]):
-        print(f"  {i+1}. {track}")
+        print(f"  {i + 1}. {track}")
         print(f"      First detection: {track.detections[0]}")
         print(f"      Last detection:  {track.detections[-1]}")
     print()

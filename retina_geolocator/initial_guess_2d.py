@@ -82,7 +82,7 @@ def generate_initial_guess_2d_from_previous(prev_solution, track, dt_seconds):
     Returns:
         [range_km, azimuth_deg, v_radial_ms, v_tangential_ms]
     """
-    range_prev, azimuth_prev, v_radial_prev, v_tangential_prev = prev_solution['state']
+    range_prev, azimuth_prev, v_radial_prev, v_tangential_prev = prev_solution["state"]
 
     # Extrapolate range
     range_new = range_prev + (v_radial_prev / 1000) * dt_seconds  # km
@@ -122,7 +122,8 @@ if __name__ == "__main__":
 
     # Geometry
     import sys
-    sys.path.append('.')
+
+    sys.path.append(".")
     from baseline_geometry import calculate_baseline_geometry
     from config_loader import load_config
     from Geometry import Geometry
@@ -131,13 +132,15 @@ if __name__ == "__main__":
     geometry = calculate_baseline_geometry(config.rx_lla, config.tx_lla)
 
     tx_ecef = Geometry.lla2ecef(config.tx_lla[0], config.tx_lla[1], config.tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   config.rx_lla[0], config.rx_lla[1], config.rx_lla[2])
+    tx_enu_m = Geometry.ecef2enu(
+        tx_ecef[0], tx_ecef[1], tx_ecef[2], config.rx_lla[0], config.rx_lla[1], config.rx_lla[2]
+    )
     tx_enu = tuple(x / 1000 for x in tx_enu_m)
 
     # Generate initial guess
-    guess = generate_initial_guess_2d(track, tx_enu, geometry['antenna_boresight'],
-                                       config.frequency, altitude_fixed_m=1000)
+    guess = generate_initial_guess_2d(
+        track, tx_enu, geometry["antenna_boresight"], config.frequency, altitude_fixed_m=1000
+    )
 
     print("Initial guess:")
     print(f"  Range: {guess[0]:.2f} km")
@@ -148,7 +151,7 @@ if __name__ == "__main__":
 
     # Test temporal continuity
     print("Testing temporal continuity:")
-    prev_solution = {'state': guess}
+    prev_solution = {"state": guess}
     dt = 10.0  # 10 seconds elapsed
     guess_new = generate_initial_guess_2d_from_previous(prev_solution, track, dt)
 

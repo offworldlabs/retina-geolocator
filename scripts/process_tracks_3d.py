@@ -42,19 +42,19 @@ def enu_to_lla(enu_km, rx_lat, rx_lon, rx_alt):
 
 def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_solutions):
     """Process a single track event."""
-    track_id = event.get('track_id')
-    track_number = event.get('track_number')
-    total_length = event.get('length', 0)
+    track_id = event.get("track_id")
+    track_number = event.get("track_number")
+    total_length = event.get("length", 0)
 
     # Parse detections
     detections = []
-    for det_dict in event.get('detections', []):
+    for det_dict in event.get("detections", []):
         det = Detection(
-            timestamp=det_dict['timestamp'],
-            delay=det_dict['delay'],
-            doppler=det_dict['doppler'],
-            snr=det_dict.get('snr', 0),
-            adsb=det_dict.get('adsb')
+            timestamp=det_dict["timestamp"],
+            delay=det_dict["delay"],
+            doppler=det_dict["doppler"],
+            snr=det_dict.get("snr", 0),
+            adsb=det_dict.get("adsb"),
         )
         detections.append(det)
 
@@ -80,12 +80,7 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
     else:
         # Generate new initial guess using dual-mode router
         initial_guess, initial_guess_source = select_initial_guess(
-            track,
-            tx_enu,
-            geometry['antenna_boresight_vector'],
-            radar_config.frequency,
-            geo_config,
-            radar_config.rx_lla
+            track, tx_enu, geometry["antenna_boresight_vector"], radar_config.frequency, geo_config, radar_config.rx_lla
         )
 
     # Solve track
@@ -95,16 +90,16 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
         tx_enu,
         (0, 0, 0),  # RX at origin
         radar_config.frequency,
-        geometry['antenna_boresight'],
-        radar_config.rx_alt
+        geometry["antenna_boresight"],
+        radar_config.rx_alt,
     )
 
     # Store solution for next event with this track number
-    if result['success']:
-        previous_solutions[track_number] = result['state']
+    if result["success"]:
+        previous_solutions[track_number] = result["state"]
 
     # Convert final position to LLA
-    final_enu = result['state'][:3]
+    final_enu = result["state"][:3]
     final_lla = enu_to_lla(final_enu, radar_config.rx_lat, radar_config.rx_lon, radar_config.rx_alt)
 
     # Convert initial guess to LLA
@@ -133,55 +128,52 @@ def process_event(event, geo_config, radar_config, geometry, tx_enu, previous_so
 
     # Build output
     output = {
-        'track_id': track_id,
-        'track_number': track_number,
-        'track_length': total_length,
-        'n_detections': n_det,
-        'quality_flag': quality,
-        'duration_s': duration_s,
-        'timestamp_start': t_start,
-        'timestamp_end': t_end,
-        'latitude': final_lla[0],
-        'longitude': final_lla[1],
-        'altitude': final_lla[2],
-        'velocity_east': result['state'][3],
-        'velocity_north': result['state'][4],
-        'velocity_up': result['state'][5],
-        'rms_delay_us': result['rms_delay'],
-        'rms_doppler_hz': result['rms_doppler'],
-        'cost': result['cost'],
-        'success': result['success'],
-        'used_previous_solution': use_previous,
-        'message': result['message'],
-        'nfev': result['nfev'],
-        'initial_guess': {
-            'source': initial_guess_source,
-            'latitude': float(initial_guess_lla[0]),
-            'longitude': float(initial_guess_lla[1]),
-            'altitude': float(initial_guess_lla[2]),
-            'velocity_east': float(initial_guess[3]),
-            'velocity_north': float(initial_guess[4]),
-            'velocity_up': float(initial_guess[5])
+        "track_id": track_id,
+        "track_number": track_number,
+        "track_length": total_length,
+        "n_detections": n_det,
+        "quality_flag": quality,
+        "duration_s": duration_s,
+        "timestamp_start": t_start,
+        "timestamp_end": t_end,
+        "latitude": final_lla[0],
+        "longitude": final_lla[1],
+        "altitude": final_lla[2],
+        "velocity_east": result["state"][3],
+        "velocity_north": result["state"][4],
+        "velocity_up": result["state"][5],
+        "rms_delay_us": result["rms_delay"],
+        "rms_doppler_hz": result["rms_doppler"],
+        "cost": result["cost"],
+        "success": result["success"],
+        "used_previous_solution": use_previous,
+        "message": result["message"],
+        "nfev": result["nfev"],
+        "initial_guess": {
+            "source": initial_guess_source,
+            "latitude": float(initial_guess_lla[0]),
+            "longitude": float(initial_guess_lla[1]),
+            "altitude": float(initial_guess_lla[2]),
+            "velocity_east": float(initial_guess[3]),
+            "velocity_north": float(initial_guess[4]),
+            "velocity_up": float(initial_guess[5]),
         },
-        'convergence': {
-            'iterations': result['nfev'],
-            'position_delta_m': position_delta_m
-        }
+        "convergence": {"iterations": result["nfev"], "position_delta_m": position_delta_m},
     }
 
     # Add ADS-B metadata if track has ADS-B
     if track.adsb_initialized:
-        output['adsb_hex'] = track.adsb_hex
-        output['adsb_initialized'] = track.adsb_initialized
+        output["adsb_hex"] = track.adsb_hex
+        output["adsb_initialized"] = track.adsb_initialized
 
     return output
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Process passive radar tracks with 3D solver')
-    parser.add_argument('input', help='Input JSONL file with track data')
-    parser.add_argument('--output', help='Output JSONL file (default: data/output/results_3d.jsonl)')
-    parser.add_argument('--config', default='geolocator_config.yml', help='Geolocator config file')
+    parser = argparse.ArgumentParser(description="Process passive radar tracks with 3D solver")
+    parser.add_argument("input", help="Input JSONL file with track data")
+    parser.add_argument("--output", help="Output JSONL file (default: data/output/results_3d.jsonl)")
+    parser.add_argument("--config", default="geolocator_config.yml", help="Geolocator config file")
     args = parser.parse_args()
 
     # Load configurations
@@ -189,8 +181,7 @@ def main():
     geo_config = load_geolocator_config(args.config)
 
     radar_config = load_config(
-        primary_path=geo_config.primary_config_path,
-        fallback_path=geo_config.fallback_config_path
+        primary_path=geo_config.primary_config_path, fallback_path=geo_config.fallback_config_path
     )
 
     print(f"  {radar_config}")
@@ -209,7 +200,7 @@ def main():
     tx_enu = tuple(x / 1000 for x in tx_enu_m)
 
     # Setup output
-    output_path = args.output if args.output else Path(geo_config.output_directory) / 'results_3d.jsonl'
+    output_path = args.output if args.output else Path(geo_config.output_directory) / "results_3d.jsonl"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Process tracks
@@ -221,26 +212,28 @@ def main():
     n_processed = 0
     n_success = 0
 
-    with open(args.input) as f_in, open(output_path, 'w') as f_out:
+    with open(args.input) as f_in, open(output_path, "w") as f_out:
         for line in f_in:
             event = json.loads(line)
             result = process_event(event, geo_config, radar_config, geometry, tx_enu, previous_solutions)
 
             if result is not None:
                 n_processed += 1
-                if result['success']:
+                if result["success"]:
                     n_success += 1
 
                 # Write immediately (streaming output)
-                f_out.write(json.dumps(result) + '\n')
+                f_out.write(json.dumps(result) + "\n")
                 f_out.flush()
 
                 if geo_config.verbose and n_processed % 10 == 0:
-                    print(f"Processed {n_processed} tracks ({n_success} successful)", end='\r')
+                    print(f"Processed {n_processed} tracks ({n_success} successful)", end="\r")
 
     print()
-    print(f"\nDone! Processed {n_processed} tracks, {n_success} successful ({100*n_success/n_processed if n_processed > 0 else 0:.1f}%)")
+    print(
+        f"\nDone! Processed {n_processed} tracks, {n_success} successful ({100 * n_success / n_processed if n_processed > 0 else 0:.1f}%)"
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

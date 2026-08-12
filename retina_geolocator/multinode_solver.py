@@ -28,15 +28,13 @@ _C_KM_S = 299792.458
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
     """Convert LLA to ENU (km) relative to a reference point."""
     ecef = Geometry.lla2ecef(lat, lon, alt_m)
-    enu_m = Geometry.ecef2enu(ecef[0], ecef[1], ecef[2],
-                              ref_lat, ref_lon, ref_alt_m)
+    enu_m = Geometry.ecef2enu(ecef[0], ecef[1], ecef[2], ref_lat, ref_lon, ref_alt_m)
     return (enu_m[0] / 1000, enu_m[1] / 1000, enu_m[2] / 1000)
 
 
 def _enu_km_to_lla(east_km, north_km, up_km, ref_lat, ref_lon, ref_alt_m):
     """Convert ENU (km) to LLA."""
-    ecef = Geometry.enu2ecef(east_km * 1000, north_km * 1000, up_km * 1000,
-                             ref_lat, ref_lon, ref_alt_m)
+    ecef = Geometry.enu2ecef(east_km * 1000, north_km * 1000, up_km * 1000, ref_lat, ref_lon, ref_alt_m)
     return Geometry.ecef2lla(ecef[0], ecef[1], ecef[2])
 
 
@@ -52,9 +50,7 @@ class NodeSetup:
         self.fc_hz = fc_hz
         # Pre-compute constants that are independent of the solver state.
         rx, tx = self.rx_enu, self.tx_enu
-        self.d_baseline_km = math.sqrt(
-            (rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2
-        )
+        self.d_baseline_km = math.sqrt((rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2)
         # fc / c  (Hz per km/s) — used for Doppler prediction.
         self.K_doppler = fc_hz / _C_KM_S
 
@@ -245,12 +241,20 @@ def solve_multinode(solver_input, node_configs):
         tx_alt_m = cfg.get("tx_alt_ft", 0) * 0.3048
 
         rx_enu = _lla_to_enu_km(
-            cfg.get("rx_lat", 0), cfg.get("rx_lon", 0), rx_alt_m,
-            ref_lat, ref_lon, ref_alt_m,
+            cfg.get("rx_lat", 0),
+            cfg.get("rx_lon", 0),
+            rx_alt_m,
+            ref_lat,
+            ref_lon,
+            ref_alt_m,
         )
         tx_enu = _lla_to_enu_km(
-            cfg.get("tx_lat", 0), cfg.get("tx_lon", 0), tx_alt_m,
-            ref_lat, ref_lon, ref_alt_m,
+            cfg.get("tx_lat", 0),
+            cfg.get("tx_lon", 0),
+            tx_alt_m,
+            ref_lat,
+            ref_lon,
+            ref_alt_m,
         )
         fc_hz = cfg.get("fc_hz", cfg.get("FC", 195e6))
         node_setups[nid] = NodeSetup(nid, rx_enu, tx_enu, fc_hz)
@@ -260,12 +264,14 @@ def solve_multinode(solver_input, node_configs):
     for m in meas_list:
         if m["node_id"] not in node_setups:
             continue
-        measurements.append(MultiNodeMeasurement(
-            node_id=m["node_id"],
-            delay_us=m["delay_us"],
-            doppler_hz=m["doppler_hz"],
-            snr=m.get("snr", 0),
-        ))
+        measurements.append(
+            MultiNodeMeasurement(
+                node_id=m["node_id"],
+                delay_us=m["delay_us"],
+                doppler_hz=m["doppler_hz"],
+                snr=m.get("snr", 0),
+            )
+        )
 
     if len(measurements) < 2:
         return None
@@ -276,8 +282,12 @@ def solve_multinode(solver_input, node_configs):
     # equations — eliminating the altitude-drift ambiguity that causes 5-10 km
     # errors in unconstrained 3D solves with only 2 nodes.
     guess_enu = _lla_to_enu_km(
-        guess["lat"], guess["lon"], guess["alt_km"] * 1000,
-        ref_lat, ref_lon, ref_alt_m,
+        guess["lat"],
+        guess["lon"],
+        guess["alt_km"] * 1000,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
     )
     z_fixed_km = guess_enu[2]  # altitude fixed in ENU km
 
@@ -290,7 +300,7 @@ def solve_multinode(solver_input, node_configs):
 
     # Bounds: horizontal position ±60 km from guess, velocity ±300 m/s
     lb = [x0[0] - 60, x0[1] - 60, -300, -300, -100]
-    ub = [x0[0] + 60, x0[1] + 60,  300,  300,  100]
+    ub = [x0[0] + 60, x0[1] + 60, 300, 300, 100]
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.
@@ -348,8 +358,7 @@ def solve_multinode(solver_input, node_configs):
         urx1 = (rx[1] - py) * inv_dprx
         urx2 = (rx[2] - pz) * inv_dprx
         pred_f = ns.K_doppler * (
-            vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2
-            + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2
+            vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2 + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2
         )
         delay_residuals.append(m.delay_us - pred_d)
         doppler_residuals.append(m.doppler_hz - pred_f)
@@ -359,8 +368,12 @@ def solve_multinode(solver_input, node_configs):
 
     # Convert solution ENU back to LLA (z is fixed)
     lat, lon, alt_m = _enu_km_to_lla(
-        state[0], state[1], z_fixed_km,
-        ref_lat, ref_lon, ref_alt_m,
+        state[0],
+        state[1],
+        z_fixed_km,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
     )
 
     return {
