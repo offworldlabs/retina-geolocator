@@ -12,7 +12,7 @@ from .config_loader import (Config, Detection, Track, GeolocatorConfig,
                             load_config, load_tracks, load_geolocator_config)
 from .initial_guess_single import generate_initial_guess, select_initial_guess
 from .lm_solver_track import solve_track
-from .multinode_solver import solve_multinode
+from .multinode_solver import solve_multinode, solve_multinode_multistart
 
 __all__ = [
     'Geometry',
@@ -32,6 +32,7 @@ __all__ = [
     'select_initial_guess',
     'solve_track',
     'solve_multinode',
+    'solve_multinode_multistart',
 ]
 
 __version__ = '1.0.0'

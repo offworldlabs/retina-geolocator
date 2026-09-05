@@ -62,6 +62,25 @@ _V_BOUND_MS = 300.0
 # Doppler set.)
 _VZ_BOUND_MS = 20.0
 
+# Altitude bounds (ENU km) for the free-altitude solve.  Same pair
+# fit_constant_velocity uses for its own z, and for the same reason: below
+# 50 m the target is on the ground and the bistatic geometry degenerates,
+# above 20 km nothing this pipeline observes is flying.
+_Z_BOUND_MIN_KM = 0.05
+_Z_BOUND_MAX_KM = 20.0
+# How close to a z bound counts as saturated, km.  The scale of the altitude
+# error the free solve exists to remove (the caller's sweep layers are 2 km
+# apart), not of the solver's own convergence tolerance.
+_Z_SATURATION_TOL_KM = 0.01
+
+# Fewest measurements a free-altitude solve is allowed.  At n=2 the four
+# residuals cannot support six unknowns — altitude is simply unobservable and
+# the optimiser would slide along that null direction to wherever the trust
+# region ran out, which is the 5-10 km error the altitude pin was introduced
+# to remove.  Below this the pin is applied regardless of what the caller asked
+# for.
+_FREE_ALT_MIN_MEAS = 3
+
 
 def _sigma_for_snr(snr: float) -> tuple[float, float]:
     """Per-measurement (σ_delay µs, σ_doppler Hz) from SNR.
@@ -255,6 +274,126 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
         dr2_dvy = w01 * (utx1 + urx1) * INV1000
         dr2_dvz = w01 * (utx2 + urx2) * INV1000
         rows.append([dr2_dx, dr2_dy, dr2_dvx, dr2_dvy, dr2_dvz])
+
+    return np.array(rows, dtype=np.float64)
+
+
+def _residual_function_free(state, node_setups, measurements):
+    """Residuals for the free-altitude state [x, y, z, vx, vy, vz].
+
+    Identical physics to _residual_function; altitude comes out of the state
+    vector instead of the caller's pin.  A separate function rather than a
+    flag on that one because the two differ in the shape of what they return
+    (five columns of Jacobian against six) and because these bodies are the
+    optimiser's inner loop — a per-measurement branch to pick the altitude
+    source would be paid on every residual evaluation of every solve,
+    including the pinned ones that are the default.
+    """
+    px = state[0]
+    py = state[1]
+    pz = state[2]
+    # Velocity in km/s (bistatic Doppler model uses km/s internally).
+    vx = state[3] * 1e-3
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    residuals = []
+
+    for m in measurements:
+        ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+        pred_delay = (dptx + dprx - ns.d_baseline_km) / _C_KM_US
+
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
+
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+        pred_doppler = ns.K_doppler * (v_tx + v_rx)
+
+        weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
+        residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
+
+    return np.array(residuals, dtype=np.float64)
+
+
+def _jacobian_function_free(state, node_setups, measurements):
+    """Analytical Jacobian for state = [x, y, z, vx, vy, vz].
+
+    The x and y partials are _jacobian_function's unchanged; z is the same
+    derivation applied to the third component, which is exactly what the
+    constant-velocity fit already does for its own free z (_cv_residuals):
+
+    ∂r_delay/∂z   = -wd/c * ((pz-tx_z)/d_tx + (pz-rx_z)/d_rx)
+    ∂r_doppler/∂z = -wf*K * [(-vz_kms + v_tx*utx_z)/d_tx
+                              + (-vz_kms + v_rx*urx_z)/d_rx]
+
+    Analytic and not numeric for the reason the pinned one is: scipy's
+    finite-difference fallback costs n_params extra residual evaluations per
+    iteration, and a free solve has six parameters rather than five.
+    """
+    px = state[0]
+    py = state[1]
+    pz = state[2]
+    vx = state[3] * 1e-3
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    inv_C = 1.0 / _C_KM_US
+    INV1000 = 1e-3
+
+    rows = []
+    for m in measurements:
+        ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
+
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+
+        w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        wd = w / _SIGMA_DELAY_US
+        wf = w / _SIGMA_DOPPLER_HZ
+        K = ns.K_doppler
+
+        # ── Delay row ──────────────────────────────────────────────────────
+        dr1_dx = -wd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+        dr1_dy = -wd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+        dr1_dz = -wd * inv_C * ((pz - tx[2]) * inv_dptx + (pz - rx[2]) * inv_dprx)
+        rows.append([dr1_dx, dr1_dy, dr1_dz, 0.0, 0.0, 0.0])
+
+        # ── Doppler row ─────────────────────────────────────────────────────
+        w01 = -wf * K
+        dr2_dx = w01 * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
+        dr2_dy = w01 * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
+        dr2_dz = w01 * ((-vz + v_tx * utx2) * inv_dptx + (-vz + v_rx * urx2) * inv_dprx)
+        dr2_dvx = w01 * (utx0 + urx0) * INV1000
+        dr2_dvy = w01 * (utx1 + urx1) * INV1000
+        dr2_dvz = w01 * (utx2 + urx2) * INV1000
+        rows.append([dr2_dx, dr2_dy, dr2_dz, dr2_dvx, dr2_dvy, dr2_dvz])
 
     return np.array(rows, dtype=np.float64)
 
@@ -515,7 +654,7 @@ def fit_constant_velocity(fit_input, node_configs):
     }
 
 
-def solve_multinode(solver_input, node_configs):
+def solve_multinode(solver_input, node_configs, free_altitude=False):
     """Solve for target position using multi-node measurements.
 
     Args:
@@ -528,6 +667,20 @@ def solve_multinode(solver_input, node_configs):
             }
         node_configs: dict[node_id] → config dict with
             rx_lat, rx_lon, rx_alt_ft, tx_lat, tx_lon, tx_alt_ft, fc_hz/FC
+        free_altitude: solve altitude as a sixth unknown instead of pinning it
+            to initial_guess.alt_km.  Default False — the pinned solve is what
+            every existing caller gets, unchanged.  Ignored (pinned anyway)
+            below _FREE_ALT_MIN_MEAS measurements, where altitude is not
+            observable at all.
+
+            The pin is only as good as the caller's altitude, and a caller that
+            searches for it on a fixed ladder cannot do better than half its
+            spacing: replayed noise-free over real droplet geometry, a sweep of
+            the backend's six 2 km-spaced layers left rms_delay at a 1.76 µs
+            median against a 3.0 µs reject gate — most of the budget spent on
+            an altitude the measurements themselves determine, and enough to
+            trigger trimming of nodes that were never wrong.  Solving for z
+            instead takes that to ~0.
 
     Returns:
         dict with:
@@ -537,6 +690,12 @@ def solve_multinode(solver_input, node_configs):
             rms_delay, rms_doppler: fit quality
             n_nodes: number of nodes used
             timestamp_ms: from input
+            altitude_mode: "free" if z was solved for, "pinned" if it came
+                from initial_guess.alt_km.
+            z_saturated: True when a free solve's altitude landed on one of
+                the [_Z_BOUND_MIN_KM, _Z_BOUND_MAX_KM] bounds, so alt_m is a
+                bound and not a fit — the altitude analogue of vz_saturated,
+                and read the same way.  Always False in pinned mode.
             cov_en_km2: 2x2 east/north position covariance (km²) as a plain
                 list-of-lists [[exx, exy], [exy, eyy]] of Python floats, or
                 None if the covariance could not be computed.
@@ -624,7 +783,10 @@ def solve_multinode(solver_input, node_configs):
     _v0 = solver_input.get("initial_velocity") or {}
     _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
     _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
-    x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
+
+    # Altitude is only an unknown when there are enough measurements to
+    # observe it — see _FREE_ALT_MIN_MEAS.
+    free_z = bool(free_altitude) and len(measurements) >= _FREE_ALT_MIN_MEAS
 
     # Bounds: horizontal position ±60 km from guess, horizontal velocity
     # ±_V_BOUND_MS.  Vertical velocity is pinned near level flight (±20 m/s
@@ -634,9 +796,29 @@ def solve_multinode(solver_input, node_configs):
     # 0.0 on every staging n=3 solve (an inert reject gate) while horizontal
     # velocity landed ~70 m/s off and dead-reckoned the map marker km away.
     # Tightening vz makes the velocity part overdetermined again, so
-    # vel_east/vel_north are honest and rms_doppler is a live residual.
-    lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
-    ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  _VZ_BOUND_MS]
+    # vel_east/vel_north are honest and rms_doppler is a live residual.  The
+    # free-altitude state keeps that bound exactly: altitude becoming an
+    # unknown says nothing about how fast the target may climb.
+    if free_z:
+        # Seeded from the same z_fixed_km the pinned solve would have used, so
+        # a free solve and a pinned one start from the caller's altitude alike
+        # and only the freedom to move differs.  Clipped because the caller's
+        # guess can sit outside the bounds (a 0 km ADS-B altitude on the ground,
+        # say) and least_squares raises on an infeasible x0.
+        z0 = min(_Z_BOUND_MAX_KM, max(_Z_BOUND_MIN_KM, z_fixed_km))
+        x0 = np.array([0.0, 0.0, z0, _seed_e, _seed_n, 0.0])
+        lb = [-60.0, -60.0, _Z_BOUND_MIN_KM, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
+        ub = [60.0, 60.0, _Z_BOUND_MAX_KM, _V_BOUND_MS, _V_BOUND_MS, _VZ_BOUND_MS]
+        _resid_fn, _jac_fn = _residual_function_free, _jacobian_function_free
+        _args = (node_setups, measurements)
+        _vz_idx = 5
+    else:
+        x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
+        lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
+        ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  _VZ_BOUND_MS]
+        _resid_fn, _jac_fn = _residual_function, _jacobian_function
+        _args = (node_setups, measurements, z_fixed_km)
+        _vz_idx = 4
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.
@@ -650,10 +832,10 @@ def solve_multinode(solver_input, node_configs):
         # floor. Under pure Gaussian noise Huber behaves identically to plain
         # L2, so well-behaved frames are unaffected.
         result = least_squares(
-            _residual_function,
+            _resid_fn,
             x0,
-            jac=_jacobian_function,
-            args=(node_setups, measurements, z_fixed_km),
+            jac=_jac_fn,
+            args=_args,
             method="trf",
             loss="huber",
             f_scale=1.0,
@@ -673,12 +855,27 @@ def solve_multinode(solver_input, node_configs):
     # vertical rate than the level-flight pin allows, so the misfit that
     # would have gone into vz leaks into the horizontal components instead —
     # velocity is statistically ~2.4x worse when this is set.
-    vz_saturated = bool(result.active_mask[4] != 0) or abs(float(state[4])) >= _VZ_BOUND_MS - 0.01
+    vz_saturated = (
+        bool(result.active_mask[_vz_idx] != 0) or abs(float(state[_vz_idx])) >= _VZ_BOUND_MS - 0.01
+    )
     px, py = state[0], state[1]
-    pz = z_fixed_km
-    vx_kms = state[2] * 1e-3
-    vy_kms = state[3] * 1e-3
-    vz_kms = state[4] * 1e-3
+    if free_z:
+        pz = float(state[2])
+        # The same reading as vz_saturated, for altitude: z on a bound is the
+        # optimiser being stopped rather than converging, so alt_m is the bound
+        # and not a measurement of anything.  Callers comparing free against
+        # pinned solves need to be able to exclude those.
+        z_saturated = bool(result.active_mask[2] != 0) or not (
+            _Z_BOUND_MIN_KM + _Z_SATURATION_TOL_KM < pz < _Z_BOUND_MAX_KM - _Z_SATURATION_TOL_KM
+        )
+        vel_e, vel_n, vel_u = state[3], state[4], state[5]
+    else:
+        pz = z_fixed_km
+        z_saturated = False
+        vel_e, vel_n, vel_u = state[2], state[3], state[4]
+    vx_kms = vel_e * 1e-3
+    vy_kms = vel_n * 1e-3
+    vz_kms = vel_u * 1e-3
 
     # Compute RMS delay and Doppler using the same inlined geometry as the solver.
     delay_residuals = []
@@ -758,9 +955,11 @@ def solve_multinode(solver_input, node_configs):
     except Exception:
         pass
 
-    # Convert solution ENU back to LLA (z is fixed)
+    # Convert solution ENU back to LLA.  pz is z_fixed_km in pinned mode and
+    # the solved z in free mode, converted by the same call either way, so
+    # alt_m reports a free altitude exactly as it reports a pinned one.
     lat, lon, alt_m = _enu_km_to_lla(
-        state[0], state[1], z_fixed_km,
+        px, py, pz,
         ref_lat, ref_lon, ref_alt_m,
     )
 
@@ -769,10 +968,12 @@ def solve_multinode(solver_input, node_configs):
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
-        "vel_east": float(state[2]),
-        "vel_north": float(state[3]),
-        "vel_up": float(state[4]),
+        "vel_east": float(vel_e),
+        "vel_north": float(vel_n),
+        "vel_up": float(vel_u),
         "vz_saturated": vz_saturated,
+        "altitude_mode": "free" if free_z else "pinned",
+        "z_saturated": z_saturated,
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
@@ -784,3 +985,66 @@ def solve_multinode(solver_input, node_configs):
         "cov_en_km2": cov_en,
         "pos_sigma_km": pos_sigma_km,
     }
+
+
+def solve_multinode_multistart(solver_input, node_configs, alt_starts_km, free_altitude=True):
+    """Run solve_multinode from several start altitudes; keep the best fit.
+
+    The free-altitude solve removes the sweep's quantisation error but not its
+    other job: the LM is local, and a 2 km-wrong start can still settle into a
+    local minimum on the wrong side of a bistatic ellipse.  A handful of
+    starts around the caller's guess restores that coverage — and, unlike the
+    caller running solve_multinode once per layer itself, does it inside ONE
+    call, which for the backend is one process-pool round trip per candidate
+    instead of six (each of which pickles the whole node-config set).
+
+    Best is by ``rms_delay``: the same metric the sweep it replaces selects
+    on, and the one the caller's reject gate reads.
+
+    Args:
+        solver_input: as solve_multinode; ``initial_guess.alt_km`` is replaced
+            by each start in turn.
+        node_configs: as solve_multinode.
+        alt_starts_km: start altitudes (km).  Empty falls back to the input's
+            own guess altitude, so a caller that computed no starts still gets
+            a solve rather than None.
+        free_altitude: passed through to solve_multinode.  True here, unlike
+            solve_multinode's own default: a multi-start pinned solve is
+            exactly the sweep, and a caller that wants that already has it.
+
+    Returns:
+        The winning solve_multinode result, with two extra fields —
+        ``alt_starts_km`` (the starts tried, in order) and ``rms_by_start``
+        (each start's rms_delay, or None where that start produced no
+        successful solve) — so a caller can see how much the extra starts
+        bought.  None when no start produced a successful solve.
+    """
+    guess = solver_input.get("initial_guess") or {}
+    starts = [float(a) for a in (alt_starts_km or [])]
+    if not starts:
+        starts = [float(guess.get("alt_km", 7.0))]
+
+    best_result = None
+    best_rms = float("inf")
+    rms_by_start: list[float | None] = []
+
+    for alt_km in starts:
+        s_try = dict(solver_input)
+        s_try["initial_guess"] = dict(guess, alt_km=alt_km)
+        result = solve_multinode(s_try, node_configs, free_altitude=free_altitude)
+        if not result or not result.get("success"):
+            rms_by_start.append(None)
+            continue
+        rms_raw = result.get("rms_delay")
+        rms = float("inf") if rms_raw is None else float(rms_raw)
+        rms_by_start.append(None if math.isinf(rms) else rms)
+        if rms < best_rms:
+            best_rms = rms
+            best_result = result
+
+    if best_result is None:
+        return None
+
+    best_result["alt_starts_km"] = starts
+    best_result["rms_by_start"] = rms_by_start
+    return best_result
