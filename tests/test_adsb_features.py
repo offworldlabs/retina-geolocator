@@ -15,10 +15,10 @@ import numpy as np
 
 from retina_geolocator.config_loader import Detection, Track, validate_adsb_data
 from retina_geolocator.initial_guess_single import (
-    lla_to_enu_km,
     adsb_velocity_to_enu,
     generate_adsb_initial_guess,
-    select_initial_guess
+    lla_to_enu_km,
+    select_initial_guess,
 )
 
 
@@ -27,22 +27,22 @@ def test_unit_adsb_validation():
     print("\n=== Unit Tests: ADS-B Validation ===")
 
     # Valid ADS-B
-    valid = {'lat': 37.7749, 'lon': -122.4194, 'alt_baro': 5000}
+    valid = {"lat": 37.7749, "lon": -122.4194, "alt_baro": 5000}
     assert validate_adsb_data(valid)
     print("  ✓ Valid ADS-B data accepted")
 
     # Invalid: lat out of range
-    invalid_lat = {'lat': 95, 'lon': -122.0}
+    invalid_lat = {"lat": 95, "lon": -122.0}
     assert not validate_adsb_data(invalid_lat)
     print("  ✓ Invalid latitude rejected")
 
     # Invalid: NaN
-    invalid_nan = {'lat': float('nan'), 'lon': -122.0}
+    invalid_nan = {"lat": float("nan"), "lon": -122.0}
     assert not validate_adsb_data(invalid_nan)
     print("  ✓ NaN latitude rejected")
 
     # Invalid: missing required field
-    invalid_missing = {'lat': 37.0}
+    invalid_missing = {"lat": 37.0}
     assert not validate_adsb_data(invalid_missing)
     print("  ✓ Missing longitude rejected")
 
@@ -51,16 +51,16 @@ def test_unit_adsb_validation():
     print("  ✓ Non-dict rejected")
 
     # Edge case: altitude extremes
-    high_alt = {'lat': 37.0, 'lon': -122.0, 'alt_baro': 40000}
+    high_alt = {"lat": 37.0, "lon": -122.0, "alt_baro": 40000}
     assert validate_adsb_data(high_alt)
     print("  ✓ High altitude accepted")
 
-    low_alt = {'lat': 37.0, 'lon': -122.0, 'alt_baro': -1000}
+    low_alt = {"lat": 37.0, "lon": -122.0, "alt_baro": -1000}
     assert validate_adsb_data(low_alt)
     print("  ✓ Low altitude accepted")
 
     # Edge case: ground speed extremes
-    high_gs = {'lat': 37.0, 'lon': -122.0, 'gs': 800}
+    high_gs = {"lat": 37.0, "lon": -122.0, "gs": 800}
     assert validate_adsb_data(high_gs)
     print("  ✓ High ground speed accepted")
 
@@ -109,7 +109,7 @@ def test_unit_velocity_conversion():
     print(f"  ✓ 1000 ft/min climb: vz={vz:.2f} m/s")
 
     # Invalid input
-    vel = adsb_velocity_to_enu(float('nan'), 0)
+    vel = adsb_velocity_to_enu(float("nan"), 0)
     assert vel is None
     print("  ✓ NaN input returns None")
 
@@ -121,13 +121,7 @@ def test_unit_adsb_initial_guess():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Valid ADS-B with full data
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det])
 
@@ -144,7 +138,7 @@ def test_unit_adsb_initial_guess():
     print("  ✓ No ADS-B returns None")
 
     # Invalid ADS-B (missing lat)
-    adsb_invalid = {'lon': -122.40, 'alt_baro': 5000}
+    adsb_invalid = {"lon": -122.40, "alt_baro": 5000}
     det_invalid = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_invalid)
     track_invalid = Track("250618-000002", [det_invalid])
     guess = generate_adsb_initial_guess(track_invalid, rx_lla, None)
@@ -168,8 +162,8 @@ def test_unit_dual_mode_selection():
     frequency = 503e6
 
     # Test: ADS-B mode selected
-    adsb_data = {'lat': 37.85, 'lon': -122.40, 'alt_baro': 5000, 'gs': 250, 'track': 90}
-    event_data = {'track_id': '250618-A12345', 'adsb_hex': 'a12345', 'adsb_initialized': True}
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det], event_data)
     config = MockConfig(use_adsb=True, adsb_fallback=True)
@@ -211,8 +205,8 @@ def test_integration_end_to_end_adsb():
     config = MockConfig()
 
     # Create track with ADS-B
-    adsb_data = {'lat': 37.85, 'lon': -122.40, 'alt_baro': 5000, 'gs': 250, 'track': 90}
-    event_data = {'track_id': '250618-A12345', 'adsb_hex': 'a12345', 'adsb_initialized': True}
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det], event_data)
 
@@ -291,17 +285,17 @@ def test_integration_mixed_dataset():
 
     # 3 tracks with ADS-B
     for i in range(3):
-        adsb_data = {'lat': 37.85 + i*0.01, 'lon': -122.40, 'alt_baro': 5000, 'gs': 250, 'track': 90}
-        event_data = {'track_id': f'250618-A1234{i}', 'adsb_hex': f'a1234{i}', 'adsb_initialized': True}
-        det = Detection(1718747745000 + i*1000, 16.1, 134.5, 18.2, adsb=adsb_data)
+        adsb_data = {"lat": 37.85 + i * 0.01, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
+        event_data = {"track_id": f"250618-A1234{i}", "adsb_hex": f"a1234{i}", "adsb_initialized": True}
+        det = Detection(1718747745000 + i * 1000, 16.1, 134.5, 18.2, adsb=adsb_data)
         track = Track(f"250618-A1234{i}", [det], event_data)
-        tracks.append(('adsb', track))
+        tracks.append(("adsb", track))
 
     # 3 tracks without ADS-B
     for i in range(3):
-        det = Detection(1718747745000 + i*1000, 16.1, 134.5, 18.2)
+        det = Detection(1718747745000 + i * 1000, 16.1, 134.5, 18.2)
         track = Track(f"250618-00000{i}", [det])
-        tracks.append(('geometric', track))
+        tracks.append(("geometric", track))
 
     # Process all tracks
     adsb_count = 0
@@ -312,7 +306,7 @@ def test_integration_mixed_dataset():
         assert guess is not None
         assert source == expected_source
 
-        if source == 'adsb':
+        if source == "adsb":
             adsb_count += 1
         else:
             geometric_count += 1
@@ -339,8 +333,8 @@ def test_integration_fallback_behavior():
     config = MockConfig()
 
     # Track with invalid ADS-B (missing lat)
-    adsb_invalid = {'lon': -122.40, 'alt_baro': 5000}
-    event_data = {'track_id': '250618-000002', 'adsb_hex': 'a00002', 'adsb_initialized': True}
+    adsb_invalid = {"lon": -122.40, "alt_baro": 5000}
+    event_data = {"track_id": "250618-000002", "adsb_hex": "a00002", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_invalid)
     track = Track("250618-000002", [det], event_data)
 
@@ -374,5 +368,3 @@ def test_performance_comparison():
     reduction = (1 - adsb_iterations / geometric_iterations) * 100
     assert reduction > 50, "ADS-B should reduce iterations by >50%"
     print(f"  ✓ ADS-B reduces iterations by {reduction:.1f}%")
-
-

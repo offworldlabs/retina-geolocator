@@ -16,38 +16,33 @@ import pickle
 import numpy as np
 import pytest
 
-from retina_geolocator.multinode_solver import _lla_to_enu_km, solve_multinode
 from retina_geolocator.bistatic_models import bistatic_delay, bistatic_doppler
+from retina_geolocator.multinode_solver import _lla_to_enu_km, solve_multinode
 
 
-def _make_synthetic_input(node_configs, target_lat, target_lon, target_alt_km,
-                           vel_east=0.0, vel_north=0.0, vel_up=0.0):
+def _make_synthetic_input(node_configs, target_lat, target_lon, target_alt_km, vel_east=0.0, vel_north=0.0, vel_up=0.0):
     """Build a solver_input from a known target state, mirroring
     tests/test_solver.py's helper of the same name."""
     ref_lat = target_lat
     ref_lon = target_lon
 
-    target_enu = _lla_to_enu_km(target_lat, target_lon, target_alt_km * 1000,
-                                 ref_lat, ref_lon, 0.0)
+    target_enu = _lla_to_enu_km(target_lat, target_lon, target_alt_km * 1000, ref_lat, ref_lon, 0.0)
     measurements = []
     for nid, cfg in node_configs.items():
-        rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"],
-                                 cfg["rx_alt_ft"] * 0.3048,
-                                 ref_lat, ref_lon, 0.0)
-        tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"],
-                                 cfg["tx_alt_ft"] * 0.3048,
-                                 ref_lat, ref_lon, 0.0)
+        rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"], cfg["rx_alt_ft"] * 0.3048, ref_lat, ref_lon, 0.0)
+        tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.3048, ref_lat, ref_lon, 0.0)
         fc = cfg.get("fc_hz", 100e6)
 
         delay = bistatic_delay(target_enu, tx_enu, rx_enu)
-        doppler = bistatic_doppler(target_enu, (vel_east, vel_north, vel_up),
-                                    tx_enu, rx_enu, fc)
-        measurements.append({
-            "node_id": nid,
-            "delay_us": delay,
-            "doppler_hz": doppler,
-            "snr": 15.0,
-        })
+        doppler = bistatic_doppler(target_enu, (vel_east, vel_north, vel_up), tx_enu, rx_enu, fc)
+        measurements.append(
+            {
+                "node_id": nid,
+                "delay_us": delay,
+                "doppler_hz": doppler,
+                "snr": 15.0,
+            }
+        )
 
     return {
         "initial_guess": {
@@ -66,23 +61,39 @@ def _make_synthetic_input(node_configs, target_lat, target_lon, target_alt_km,
 # than a near-duplicate baseline.
 _FOUR_NODE_CONFIGS = {
     "node_a": {
-        "rx_lat": 40.7128, "rx_lon": -74.0060, "rx_alt_ft": 100,
-        "tx_lat": 40.78, "tx_lon": -73.95, "tx_alt_ft": 500,
+        "rx_lat": 40.7128,
+        "rx_lon": -74.0060,
+        "rx_alt_ft": 100,
+        "tx_lat": 40.78,
+        "tx_lon": -73.95,
+        "tx_alt_ft": 500,
         "fc_hz": 100e6,
     },
     "node_b": {
-        "rx_lat": 40.75, "rx_lon": -73.90, "rx_alt_ft": 150,
-        "tx_lat": 40.70, "tx_lon": -73.85, "tx_alt_ft": 400,
+        "rx_lat": 40.75,
+        "rx_lon": -73.90,
+        "rx_alt_ft": 150,
+        "tx_lat": 40.70,
+        "tx_lon": -73.85,
+        "tx_alt_ft": 400,
         "fc_hz": 100e6,
     },
     "node_c": {
-        "rx_lat": 40.65, "rx_lon": -73.98, "rx_alt_ft": 120,
-        "tx_lat": 40.62, "tx_lon": -73.88, "tx_alt_ft": 600,
+        "rx_lat": 40.65,
+        "rx_lon": -73.98,
+        "rx_alt_ft": 120,
+        "tx_lat": 40.62,
+        "tx_lon": -73.88,
+        "tx_alt_ft": 600,
         "fc_hz": 100e6,
     },
     "node_d": {
-        "rx_lat": 40.80, "rx_lon": -73.75, "rx_alt_ft": 130,
-        "tx_lat": 40.85, "tx_lon": -73.65, "tx_alt_ft": 550,
+        "rx_lat": 40.80,
+        "rx_lon": -73.75,
+        "rx_alt_ft": 130,
+        "tx_lat": 40.85,
+        "tx_lon": -73.65,
+        "tx_alt_ft": 550,
         "fc_hz": 100e6,
     },
 }
@@ -96,7 +107,10 @@ class TestCovarianceKeys:
         """A >=3-node solve reports a well-formed 2x2 PSD east/north
         covariance and a finite, positive scalar sigma."""
         s_in = _make_synthetic_input(
-            _FOUR_NODE_CONFIGS, *_TARGET, vel_east=_VEL_EAST, vel_north=_VEL_NORTH,
+            _FOUR_NODE_CONFIGS,
+            *_TARGET,
+            vel_east=_VEL_EAST,
+            vel_north=_VEL_NORTH,
         )
         result = solve_multinode(s_in, _FOUR_NODE_CONFIGS)
 
@@ -139,12 +153,18 @@ class TestCovarianceKeys:
         }
 
         s_in_2 = _make_synthetic_input(
-            two_node_configs, *_TARGET, vel_east=_VEL_EAST, vel_north=_VEL_NORTH,
+            two_node_configs,
+            *_TARGET,
+            vel_east=_VEL_EAST,
+            vel_north=_VEL_NORTH,
         )
         result_2 = solve_multinode(s_in_2, two_node_configs)
 
         s_in_4 = _make_synthetic_input(
-            _FOUR_NODE_CONFIGS, *_TARGET, vel_east=_VEL_EAST, vel_north=_VEL_NORTH,
+            _FOUR_NODE_CONFIGS,
+            *_TARGET,
+            vel_east=_VEL_EAST,
+            vel_north=_VEL_NORTH,
         )
         result_4 = solve_multinode(s_in_4, _FOUR_NODE_CONFIGS)
 
@@ -161,7 +181,10 @@ class TestCovarianceKeys:
         cov_en_km2 has to be a plain nested list of floats, not a numpy
         array, for exactly this reason."""
         s_in = _make_synthetic_input(
-            _FOUR_NODE_CONFIGS, *_TARGET, vel_east=_VEL_EAST, vel_north=_VEL_NORTH,
+            _FOUR_NODE_CONFIGS,
+            *_TARGET,
+            vel_east=_VEL_EAST,
+            vel_north=_VEL_NORTH,
         )
         result = solve_multinode(s_in, _FOUR_NODE_CONFIGS)
         assert result is not None

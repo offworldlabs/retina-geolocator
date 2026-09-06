@@ -29,18 +29,42 @@ from retina_geolocator.multinode_solver import _lla_to_enu_km
 # same scale/neighbourhood as test_constant_velocity_fit.py's known-good
 # geometry.
 _NODE_CFGS = {
-    "a": {"rx_lat": 34.85, "rx_lon": -82.40, "rx_alt_ft": 1000,
-          "tx_lat": 34.9412, "tx_lon": -82.4103, "tx_alt_ft": 2000,
-          "fc_hz": 183e6},
-    "b": {"rx_lat": 34.85, "rx_lon": -82.40, "rx_alt_ft": 1000,
-          "tx_lat": 34.9701, "tx_lon": -81.9484, "tx_alt_ft": 800,
-          "fc_hz": 195e6},
-    "c": {"rx_lat": 34.70, "rx_lon": -82.55, "rx_alt_ft": 1100,
-          "tx_lat": 34.75, "tx_lon": -82.20, "tx_alt_ft": 1400,
-          "fc_hz": 199e6},
-    "d": {"rx_lat": 35.02, "rx_lon": -82.15, "rx_alt_ft": 950,
-          "tx_lat": 34.96, "tx_lon": -82.55, "tx_alt_ft": 1300,
-          "fc_hz": 201e6},
+    "a": {
+        "rx_lat": 34.85,
+        "rx_lon": -82.40,
+        "rx_alt_ft": 1000,
+        "tx_lat": 34.9412,
+        "tx_lon": -82.4103,
+        "tx_alt_ft": 2000,
+        "fc_hz": 183e6,
+    },
+    "b": {
+        "rx_lat": 34.85,
+        "rx_lon": -82.40,
+        "rx_alt_ft": 1000,
+        "tx_lat": 34.9701,
+        "tx_lon": -81.9484,
+        "tx_alt_ft": 800,
+        "fc_hz": 195e6,
+    },
+    "c": {
+        "rx_lat": 34.70,
+        "rx_lon": -82.55,
+        "rx_alt_ft": 1100,
+        "tx_lat": 34.75,
+        "tx_lon": -82.20,
+        "tx_alt_ft": 1400,
+        "fc_hz": 199e6,
+    },
+    "d": {
+        "rx_lat": 35.02,
+        "rx_lon": -82.15,
+        "rx_alt_ft": 950,
+        "tx_lat": 34.96,
+        "tx_lon": -82.55,
+        "tx_alt_ft": 1300,
+        "fc_hz": 201e6,
+    },
 }
 TRUTH = (34.88, -82.35, 7.0)  # lat, lon, alt_km
 
@@ -58,10 +82,8 @@ def _measured_delay_us(cfg, lat, lon, alt_km):
     """Bistatic delay (us) for a target at (lat, lon, alt_km), via the exact
     ENU construction consensus.py uses internally — geometry ground truth,
     independent of the module's own pipeline."""
-    rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"],
-                             (cfg.get("rx_alt_ft") or 0) * 0.3048, lat, lon, 0.0)
-    tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"],
-                             (cfg.get("tx_alt_ft") or 0) * 0.3048, lat, lon, 0.0)
+    rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"], (cfg.get("rx_alt_ft") or 0) * 0.3048, lat, lon, 0.0)
+    tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"], (cfg.get("tx_alt_ft") or 0) * 0.3048, lat, lon, 0.0)
     tgt_enu = _lla_to_enu_km(lat, lon, alt_km * 1000.0, lat, lon, 0.0)
     baseline = math.dist(rx_enu, tx_enu)
     diff_km = math.dist(tgt_enu, tx_enu) + math.dist(tgt_enu, rx_enu) - baseline
@@ -73,19 +95,15 @@ def _node_geom(cfg, ref, truth):
     _pair_candidates expect, built directly for unit-testing those helpers
     without going through the public entry points."""
     ref_lat, ref_lon = ref[0], ref[1]
-    rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"],
-                             (cfg.get("rx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0)
-    tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"],
-                             (cfg.get("tx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0)
+    rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"], (cfg.get("rx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0)
+    tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"], (cfg.get("tx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0)
     diff_km = _measured_delay_us(cfg, *truth) * C_KM_US
-    return {"rx_enu": rx_enu, "tx_enu": tx_enu,
-            "baseline_km": math.dist(rx_enu, tx_enu), "diff_km": diff_km}
+    return {"rx_enu": rx_enu, "tx_enu": tx_enu, "baseline_km": math.dist(rx_enu, tx_enu), "diff_km": diff_km}
 
 
 def _meas(nid, truth, cfgs=_NODE_CFGS, snr=15.0):
     lat, lon, alt_km = truth
-    return {"node_id": nid, "delay_us": _measured_delay_us(cfgs[nid], lat, lon, alt_km),
-            "doppler_hz": 0.0, "snr": snr}
+    return {"node_id": nid, "delay_us": _measured_delay_us(cfgs[nid], lat, lon, alt_km), "doppler_hz": 0.0, "snr": snr}
 
 
 def _build_s_in(measurements, guess, **overrides):
@@ -113,9 +131,7 @@ class TestLocusPoint:
         # Bearing from RX straight at the ENU origin — where truth sits in
         # this reference frame, so this bearing is guaranteed to cross the
         # locus (truth produced the measured diff_km in the first place).
-        bearing = math.degrees(
-            math.atan2(-node["rx_enu"][0], -node["rx_enu"][1])
-        ) % 360
+        bearing = math.degrees(math.atan2(-node["rx_enu"][0], -node["rx_enu"][1])) % 360
         ceiling = node["diff_km"] / 2.0 + node["baseline_km"] + 5.0
         pt = _locus_point(node, bearing, ceiling, TRUTH[2])
         assert pt is not None
@@ -124,13 +140,11 @@ class TestLocusPoint:
     def test_no_bracket_returns_none(self):
         # Sub-RX point (at the pinned altitude) already exceeds a tiny
         # target differential.
-        node = {"rx_enu": (0.0, 0.0, 0.0), "tx_enu": (10.0, 0.0, 0.0),
-                "baseline_km": 10.0, "diff_km": 0.001}
+        node = {"rx_enu": (0.0, 0.0, 0.0), "tx_enu": (10.0, 0.0, 0.0), "baseline_km": 10.0, "diff_km": 0.001}
         assert _locus_point(node, 90.0, 20.0, z_km=20.0) is None
 
     def test_short_ceiling_returns_none(self):
-        node = {"rx_enu": (0.0, 0.0, 0.0), "tx_enu": (10.0, 0.0, 0.0),
-                "baseline_km": 10.0, "diff_km": 5.0}
+        node = {"rx_enu": (0.0, 0.0, 0.0), "tx_enu": (10.0, 0.0, 0.0), "baseline_km": 10.0, "diff_km": 5.0}
         assert _locus_point(node, 90.0, 0.001, z_km=0.0) is None
 
 
@@ -178,15 +192,15 @@ class TestClustering:
 
     def test_score_orders_nodes_then_pairs_then_residual(self):
         fewer_nodes = {"nodes": {"a", "b"}, "pairs": {("a", "b")}, "residuals": [0.01]}
-        more_nodes = {"nodes": {"a", "b", "c"}, "pairs": {("a", "b"), ("b", "c")},
-                      "residuals": [5.0]}
+        more_nodes = {"nodes": {"a", "b", "c"}, "pairs": {("a", "b"), ("b", "c")}, "residuals": [5.0]}
         assert _cluster_score(more_nodes) > _cluster_score(fewer_nodes)
 
-        same_nodes_fewer_pairs = {"nodes": {"a", "b", "c"},
-                                  "pairs": {("a", "b"), ("b", "c")}, "residuals": [5.0]}
-        same_nodes_more_pairs = {"nodes": {"a", "b", "c"},
-                                 "pairs": {("a", "b"), ("b", "c"), ("a", "c")},
-                                 "residuals": [5.0]}
+        same_nodes_fewer_pairs = {"nodes": {"a", "b", "c"}, "pairs": {("a", "b"), ("b", "c")}, "residuals": [5.0]}
+        same_nodes_more_pairs = {
+            "nodes": {"a", "b", "c"},
+            "pairs": {("a", "b"), ("b", "c"), ("a", "c")},
+            "residuals": [5.0],
+        }
         assert _cluster_score(same_nodes_more_pairs) > _cluster_score(same_nodes_fewer_pairs)
 
         worse_residual = {"nodes": {"a", "b"}, "pairs": {("a", "b")}, "residuals": [5.0]}
@@ -203,9 +217,19 @@ class TestSelectConsensus:
         assert sel is not None
         assert sel["node_ids"] == ["a", "b", "c", "d"]
         assert _haversine_km(sel["lat"], sel["lon"], TRUTH[0], TRUTH[1]) < 5.0
-        for key in ("node_ids", "input_node_ids", "lat", "lon", "alt_km",
-                    "n_candidates", "n_clusters", "n_corroborated_clusters",
-                    "n_pairs", "mean_residual_us", "centroid_offset_km"):
+        for key in (
+            "node_ids",
+            "input_node_ids",
+            "lat",
+            "lon",
+            "alt_km",
+            "n_candidates",
+            "n_clusters",
+            "n_corroborated_clusters",
+            "n_pairs",
+            "mean_residual_us",
+            "centroid_offset_km",
+        ):
             assert key in sel
 
     def test_contaminated_node_excluded(self):
@@ -239,14 +263,25 @@ class TestSolveConsensus:
     def test_result_shape_matches_solve_multinode(self):
         out = solve_consensus(_s_in(["a", "b", "c", "d"]), _NODE_CFGS)
         assert out is not None
-        for key in ("success", "lat", "lon", "alt_m", "vel_east", "vel_north",
-                    "vel_up", "rms_delay", "rms_doppler", "n_nodes",
-                    "n_measurements", "contributing_node_ids", "timestamp_ms"):
+        for key in (
+            "success",
+            "lat",
+            "lon",
+            "alt_m",
+            "vel_east",
+            "vel_north",
+            "vel_up",
+            "rms_delay",
+            "rms_doppler",
+            "n_nodes",
+            "n_measurements",
+            "contributing_node_ids",
+            "timestamp_ms",
+        ):
             assert key in out
 
     def test_velocity_passthrough_and_no_doppler(self):
-        s_in = _s_in(["a", "b", "c", "d"],
-                     initial_velocity={"vel_east_ms": 123.0, "vel_north_ms": -45.0})
+        s_in = _s_in(["a", "b", "c", "d"], initial_velocity={"vel_east_ms": 123.0, "vel_north_ms": -45.0})
         out = solve_consensus(s_in, _NODE_CFGS)
         assert out["vel_east"] == pytest.approx(123.0)
         assert out["vel_north"] == pytest.approx(-45.0)
@@ -262,10 +297,19 @@ class TestSolveConsensus:
         s_in = _s_in(["a", "b", "c", "d"])
 
         def fake_refine(s_sub, cfgs):
-            return {"success": True, "lat": 40.0, "lon": -90.0, "alt_m": 5000.0,
-                    "vel_east": 1.0, "vel_north": 2.0, "vel_up": 3.0,
-                    "rms_delay": 0.01, "rms_doppler": 0.5,
-                    "n_nodes": 99, "contributing_node_ids": ["zzz"]}
+            return {
+                "success": True,
+                "lat": 40.0,
+                "lon": -90.0,
+                "alt_m": 5000.0,
+                "vel_east": 1.0,
+                "vel_north": 2.0,
+                "vel_up": 3.0,
+                "rms_delay": 0.01,
+                "rms_doppler": 0.5,
+                "n_nodes": 99,
+                "contributing_node_ids": ["zzz"],
+            }
 
         out = solve_consensus(s_in, _NODE_CFGS, refine_fn=fake_refine)
         assert out["lat"] == 40.0 and out["lon"] == -90.0

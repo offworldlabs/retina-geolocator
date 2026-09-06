@@ -74,12 +74,10 @@ _CLUSTER_RADIUS_KM = 3.0
 
 
 def _differential_at(node: dict, point: tuple) -> float:
-    return (math.dist(point, node["tx_enu"]) + math.dist(point, node["rx_enu"])
-            - node["baseline_km"])
+    return math.dist(point, node["tx_enu"]) + math.dist(point, node["rx_enu"]) - node["baseline_km"]
 
 
-def _locus_point(node: dict, bearing_deg: float, ceiling_km: float,
-                  z_km: float) -> tuple | None:
+def _locus_point(node: dict, bearing_deg: float, ceiling_km: float, z_km: float) -> tuple | None:
     """Ground-range bisection along one bearing from node's RX, at z_km."""
     rx = node["rx_enu"]
     brg = math.radians(bearing_deg)
@@ -139,8 +137,7 @@ def _pair_candidates(node_a: dict, node_b: dict, z_km: float) -> list[dict]:
             else:
                 hi = mid
         if best_pt is not None:
-            candidates.append({"e": best_pt[0], "n": best_pt[1],
-                                "residual": abs(best_res)})
+            candidates.append({"e": best_pt[0], "n": best_pt[1], "residual": abs(best_res)})
     return candidates
 
 
@@ -155,13 +152,11 @@ def _cluster_candidates(candidates: list[dict]) -> list[dict]:
                 target = cl
                 break
         if target is None:
-            target = {"centroid": (c["e"], c["n"]), "count": 0,
-                       "pairs": set(), "nodes": set(), "residuals": []}
+            target = {"centroid": (c["e"], c["n"]), "count": 0, "pairs": set(), "nodes": set(), "residuals": []}
             clusters.append(target)
         n0 = target["count"]
         ce, cn = target["centroid"]
-        target["centroid"] = ((ce * n0 + c["e"]) / (n0 + 1),
-                               (cn * n0 + c["n"]) / (n0 + 1))
+        target["centroid"] = ((ce * n0 + c["e"]) / (n0 + 1), (cn * n0 + c["n"]) / (n0 + 1))
         target["count"] = n0 + 1
         target["pairs"].add(c["pair"])
         target["nodes"].update(c["pair"])
@@ -205,15 +200,18 @@ def _run_consensus(s_in: dict, node_cfgs: dict) -> dict | None:
         delay_us = m.get("delay_us")
         if cfg is None or delay_us is None or delay_us <= 0:
             continue
-        rx_enu = _lla_to_enu_km(cfg.get("rx_lat", 0), cfg.get("rx_lon", 0),
-                                 (cfg.get("rx_alt_ft") or 0) * 0.3048,
-                                 ref_lat, ref_lon, 0.0)
-        tx_enu = _lla_to_enu_km(cfg.get("tx_lat", 0), cfg.get("tx_lon", 0),
-                                 (cfg.get("tx_alt_ft") or 0) * 0.3048,
-                                 ref_lat, ref_lon, 0.0)
-        nodes[nid] = {"rx_enu": rx_enu, "tx_enu": tx_enu,
-                      "baseline_km": math.dist(rx_enu, tx_enu),
-                      "diff_km": delay_us * C_KM_US}
+        rx_enu = _lla_to_enu_km(
+            cfg.get("rx_lat", 0), cfg.get("rx_lon", 0), (cfg.get("rx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0
+        )
+        tx_enu = _lla_to_enu_km(
+            cfg.get("tx_lat", 0), cfg.get("tx_lon", 0), (cfg.get("tx_alt_ft") or 0) * 0.3048, ref_lat, ref_lon, 0.0
+        )
+        nodes[nid] = {
+            "rx_enu": rx_enu,
+            "tx_enu": tx_enu,
+            "baseline_km": math.dist(rx_enu, tx_enu),
+            "diff_km": delay_us * C_KM_US,
+        }
     if len(nodes) < 2:
         return None
 
@@ -253,10 +251,13 @@ def _run_consensus(s_in: dict, node_cfgs: dict) -> dict | None:
 
     return {
         "by_node": by_node,
-        "ref_lat": ref_lat, "ref_lon": ref_lon, "z_km": z_km,
+        "ref_lat": ref_lat,
+        "ref_lon": ref_lon,
+        "z_km": z_km,
         "input_node_ids": sorted(nodes),
         "winner_nodes": winner_nodes,
-        "winner_e": winner_e, "winner_n": winner_n,
+        "winner_e": winner_e,
+        "winner_n": winner_n,
         "winner_residuals": winner_residuals,
         "n_candidates": len(all_candidates),
         "n_clusters": n_clusters,
@@ -276,13 +277,14 @@ def select_consensus(s_in: dict, node_cfgs: dict) -> dict | None:
     r = _run_consensus(s_in, node_cfgs)
     if r is None:
         return None
-    lat, lon, _ = _enu_km_to_lla(r["winner_e"], r["winner_n"], r["z_km"],
-                                  r["ref_lat"], r["ref_lon"], 0.0)
+    lat, lon, _ = _enu_km_to_lla(r["winner_e"], r["winner_n"], r["z_km"], r["ref_lat"], r["ref_lon"], 0.0)
     mean_residual_km = sum(r["winner_residuals"]) / len(r["winner_residuals"])
     return {
         "node_ids": sorted(r["winner_nodes"]),
         "input_node_ids": r["input_node_ids"],
-        "lat": float(lat), "lon": float(lon), "alt_km": r["z_km"],
+        "lat": float(lat),
+        "lon": float(lon),
+        "alt_km": r["z_km"],
         "n_candidates": r["n_candidates"],
         "n_clusters": r["n_clusters"],
         "n_corroborated_clusters": r["n_corroborated_clusters"],
@@ -303,13 +305,14 @@ def solve_consensus(s_in: dict, node_cfgs: dict, *, refine_fn=None) -> dict | No
     r = _run_consensus(s_in, node_cfgs)
     if r is None:
         return None
-    lat, lon, _ = _enu_km_to_lla(r["winner_e"], r["winner_n"], r["z_km"],
-                                  r["ref_lat"], r["ref_lon"], 0.0)
+    lat, lon, _ = _enu_km_to_lla(r["winner_e"], r["winner_n"], r["z_km"], r["ref_lat"], r["ref_lon"], 0.0)
     iv = s_in.get("initial_velocity") or {}
     winner_nodes = r["winner_nodes"]
     result = {
         "success": True,
-        "lat": float(lat), "lon": float(lon), "alt_m": r["z_km"] * 1000.0,
+        "lat": float(lat),
+        "lon": float(lon),
+        "alt_m": r["z_km"] * 1000.0,
         "vel_east": float(iv.get("vel_east_ms") or 0.0),
         "vel_north": float(iv.get("vel_north_ms") or 0.0),
         "vel_up": 0.0,
@@ -330,8 +333,7 @@ def solve_consensus(s_in: dict, node_cfgs: dict, *, refine_fn=None) -> dict | No
         except Exception:
             refined = None
         if refined and refined.get("success"):
-            for k in ("lat", "lon", "alt_m", "vel_east", "vel_north", "vel_up",
-                      "rms_delay", "rms_doppler"):
+            for k in ("lat", "lon", "alt_m", "vel_east", "vel_north", "vel_up", "rms_delay", "rms_doppler"):
                 if k in refined:
                     result[k] = refined[k]
             # contributing_node_ids/n_nodes stay the consensus identity —

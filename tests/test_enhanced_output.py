@@ -4,7 +4,7 @@
 import numpy as np
 
 from retina_geolocator.config_loader import Detection, Track
-from retina_geolocator.initial_guess_single import generate_initial_guess, generate_adsb_initial_guess
+from retina_geolocator.initial_guess_single import generate_adsb_initial_guess, generate_initial_guess
 
 
 def test_integration_with_adsb():
@@ -12,19 +12,9 @@ def test_integration_with_adsb():
     print("\nTesting integration with ADS-B track...")
 
     # Create mock track with ADS-B
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
-    event_data = {
-        'track_id': '250618-A12345',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True
-    }
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     track = Track("250618-A12345", [det], event_data)
 
     # Generate initial guess

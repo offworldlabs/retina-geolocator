@@ -12,10 +12,10 @@ class Geometry:
     """WGS84 geodetic coordinate transformations."""
 
     # WGS84 ellipsoid parameters
-    _a = 6378137.0            # semi-major axis (m)
-    _f = 1 / 298.257223563    # flattening
-    _b = _a * (1 - _f)        # semi-minor axis
-    _e2 = 2 * _f - _f ** 2    # first eccentricity squared
+    _a = 6378137.0  # semi-major axis (m)
+    _f = 1 / 298.257223563  # flattening
+    _b = _a * (1 - _f)  # semi-minor axis
+    _e2 = 2 * _f - _f**2  # first eccentricity squared
 
     @staticmethod
     def lla2ecef(lat_deg, lon_deg, alt_m):
@@ -31,7 +31,7 @@ class Geometry:
         sin_lon = np.sin(lon)
         cos_lon = np.cos(lon)
 
-        N = Geometry._a / np.sqrt(1 - Geometry._e2 * sin_lat ** 2)
+        N = Geometry._a / np.sqrt(1 - Geometry._e2 * sin_lat**2)
 
         x = (N + alt_m) * cos_lat * cos_lon
         y = (N + alt_m) * cos_lat * sin_lon
@@ -53,14 +53,14 @@ class Geometry:
         b = Geometry._b
 
         lon = np.arctan2(y, x)
-        p = np.sqrt(x ** 2 + y ** 2)
+        p = np.sqrt(x**2 + y**2)
 
         # Initial estimate
         lat = np.arctan2(z, p * (1 - e2))
 
         for _ in range(10):
             sin_lat = np.sin(lat)
-            N = a / np.sqrt(1 - e2 * sin_lat ** 2)
+            N = a / np.sqrt(1 - e2 * sin_lat**2)
             lat_new = np.arctan2(z + e2 * N * sin_lat, p)
             if abs(lat_new - lat) < 1e-12:
                 break
@@ -68,7 +68,7 @@ class Geometry:
 
         sin_lat = np.sin(lat)
         cos_lat = np.cos(lat)
-        N = a / np.sqrt(1 - e2 * sin_lat ** 2)
+        N = a / np.sqrt(1 - e2 * sin_lat**2)
 
         if abs(cos_lat) > 1e-10:
             alt = p / cos_lat - N

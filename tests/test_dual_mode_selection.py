@@ -9,6 +9,7 @@ from retina_geolocator.initial_guess_single import select_initial_guess
 
 class MockConfig:
     """Mock configuration object for testing."""
+
     def __init__(self, use_adsb=True, adsb_fallback=True):
         self.use_adsb_initial_guess = use_adsb
         self.adsb_fallback_to_geometric = adsb_fallback
@@ -19,18 +20,8 @@ def test_adsb_mode():
     print("Testing ADS-B mode selection...")
 
     # Create track with ADS-B data
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
-    event_data = {
-        'track_id': '250618-A12345',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det], event_data)
 
@@ -42,9 +33,7 @@ def test_adsb_mode():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "adsb", f"Should select ADS-B mode, got {source}"
@@ -71,9 +60,7 @@ def test_geometric_mode_no_adsb():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should select geometric mode, got {source}"
@@ -87,18 +74,8 @@ def test_adsb_disabled():
     print("\nTesting ADS-B disabled in config...")
 
     # Create track with ADS-B data
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
-    event_data = {
-        'track_id': '250618-A12345',
-        'adsb_hex': 'a12345',
-        'adsb_initialized': True
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
+    event_data = {"track_id": "250618-A12345", "adsb_hex": "a12345", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det], event_data)
 
@@ -110,9 +87,7 @@ def test_adsb_disabled():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should use geometric when disabled, got {source}"
@@ -125,12 +100,8 @@ def test_fallback_to_geometric():
     print("\nTesting fallback to geometric...")
 
     # Create track with incomplete ADS-B (missing lat, will cause generate_adsb_initial_guess to return None)
-    adsb_invalid = {'lon': -122.40, 'alt_baro': 5000}  # Missing 'lat'
-    event_data = {
-        'track_id': '250618-000002',
-        'adsb_hex': 'a00002',
-        'adsb_initialized': True
-    }
+    adsb_invalid = {"lon": -122.40, "alt_baro": 5000}  # Missing 'lat'
+    event_data = {"track_id": "250618-000002", "adsb_hex": "a00002", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_invalid)
     track = Track("250618-000002", [det], event_data)
 
@@ -142,9 +113,7 @@ def test_fallback_to_geometric():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router - should fallback to geometric
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should fallback to geometric, got {source}"
@@ -157,12 +126,8 @@ def test_fallback_disabled_raises():
     print("\nTesting fallback disabled (should raise)...")
 
     # Create track with incomplete ADS-B (missing lat)
-    adsb_invalid = {'lon': -122.40, 'alt_baro': 5000}  # Missing 'lat'
-    event_data = {
-        'track_id': '250618-000003',
-        'adsb_hex': 'a00003',
-        'adsb_initialized': True
-    }
+    adsb_invalid = {"lon": -122.40, "alt_baro": 5000}  # Missing 'lat'
+    event_data = {"track_id": "250618-000003", "adsb_hex": "a00003", "adsb_initialized": True}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_invalid)
     track = Track("250618-000003", [det], event_data)
 
@@ -175,9 +140,7 @@ def test_fallback_disabled_raises():
 
     # Call router - should raise ValueError
     try:
-        guess, source = select_initial_guess(
-            track, tx_enu, boresight_vector, frequency, config, rx_lla
-        )
+        guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "ADS-B initial guess failed" in str(e)
@@ -204,9 +167,7 @@ def test_backward_compatibility():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router - should use geometric (default behavior)
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should use geometric with old config, got {source}"
@@ -219,13 +180,7 @@ def test_track_not_adsb_initialized():
     print("\nTesting track without adsb_initialized flag...")
 
     # Create track with ADS-B data but not initialized flag
-    adsb_data = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90
-    }
+    adsb_data = {"lat": 37.85, "lon": -122.40, "alt_baro": 5000, "gs": 250, "track": 90}
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-000005", [det])  # No event_data, adsb_initialized=False
 
@@ -237,9 +192,7 @@ def test_track_not_adsb_initialized():
     rx_lla = (37.7644, -122.3954, 23)
 
     # Call router - should use geometric
-    guess, source = select_initial_guess(
-        track, tx_enu, boresight_vector, frequency, config, rx_lla
-    )
+    guess, source = select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_lla)
 
     assert guess is not None, "Should return valid guess"
     assert source == "geometric", f"Should use geometric when not initialized, got {source}"
@@ -247,7 +200,7 @@ def test_track_not_adsb_initialized():
     print("  ✓ Used geometric: track not ADS-B initialized")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_adsb_mode()
     test_geometric_mode_no_adsb()
     test_adsb_disabled()
@@ -256,6 +209,6 @@ if __name__ == '__main__':
     test_backward_compatibility()
     test_track_not_adsb_initialized()
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("All tests passed! ✓")
-    print("="*50)
+    print("=" * 50)

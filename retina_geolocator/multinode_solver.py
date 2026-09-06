@@ -33,11 +33,11 @@ import math
 import numpy as np
 from scipy.optimize import least_squares
 
-from .Geometry import Geometry
-
 # Speed of light in km/µs (for delay) and km/s (for Doppler).
 from retina_geolocator.constants import C_KM_S as _C_KM_S
 from retina_geolocator.constants import C_KM_US as _C_KM_US
+
+from .Geometry import Geometry
 
 # Measurement sigmas, matching the sensor model the detections are generated
 # under (world.generate_detections_for_node: 0.1 µs and 2.0 Hz at reference
@@ -106,15 +106,13 @@ def _sigma_for_snr(snr: float) -> tuple[float, float]:
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
     """Convert LLA to ENU (km) relative to a reference point."""
     ecef = Geometry.lla2ecef(lat, lon, alt_m)
-    enu_m = Geometry.ecef2enu(ecef[0], ecef[1], ecef[2],
-                              ref_lat, ref_lon, ref_alt_m)
+    enu_m = Geometry.ecef2enu(ecef[0], ecef[1], ecef[2], ref_lat, ref_lon, ref_alt_m)
     return (enu_m[0] / 1000, enu_m[1] / 1000, enu_m[2] / 1000)
 
 
 def _enu_km_to_lla(east_km, north_km, up_km, ref_lat, ref_lon, ref_alt_m):
     """Convert ENU (km) to LLA."""
-    ecef = Geometry.enu2ecef(east_km * 1000, north_km * 1000, up_km * 1000,
-                             ref_lat, ref_lon, ref_alt_m)
+    ecef = Geometry.enu2ecef(east_km * 1000, north_km * 1000, up_km * 1000, ref_lat, ref_lon, ref_alt_m)
     return Geometry.ecef2lla(ecef[0], ecef[1], ecef[2])
 
 
@@ -130,9 +128,7 @@ class NodeSetup:
         self.fc_hz = fc_hz
         # Pre-compute constants that are independent of the solver state.
         rx, tx = self.rx_enu, self.tx_enu
-        self.d_baseline_km = math.sqrt(
-            (rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2
-        )
+        self.d_baseline_km = math.sqrt((rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2)
         # fc / c  (Hz per km/s) — used for Doppler prediction.
         self.K_doppler = fc_hz / _C_KM_S
 
@@ -410,7 +406,7 @@ def _cv_residuals(state, node_setups, epochs, return_jac=False):
     over-determined and therefore testable.
     """
     px0, py0, pz0 = state[0], state[1], state[2]
-    vx = state[3] * 1e-3   # km/s
+    vx = state[3] * 1e-3  # km/s
     vy = state[4] * 1e-3
     vz = state[5] * 1e-3
 
@@ -458,8 +454,7 @@ def _cv_residuals(state, node_setups, epochs, return_jac=False):
             dx = -inv_sd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
             dy = -inv_sd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
             dz = -inv_sd * inv_C * ((pz - tx[2]) * inv_dptx + (pz - rx[2]) * inv_dprx)
-            rows.append([dx, dy, dz,
-                         dx * dt_km_per_ms, dy * dt_km_per_ms, dz * dt_km_per_ms])
+            rows.append([dx, dy, dz, dx * dt_km_per_ms, dy * dt_km_per_ms, dz * dt_km_per_ms])
 
             # ── Doppler row ──────────────────────────────────────────────────
             wk = -inv_sf * ns.K_doppler
@@ -552,15 +547,26 @@ def fit_constant_velocity(fit_input, node_configs):
             if cfg is None:
                 continue
             rx_enu = _lla_to_enu_km(
-                cfg.get("rx_lat", 0), cfg.get("rx_lon", 0),
-                cfg.get("rx_alt_ft", 0) * 0.3048, ref_lat, ref_lon, ref_alt_m,
+                cfg.get("rx_lat", 0),
+                cfg.get("rx_lon", 0),
+                cfg.get("rx_alt_ft", 0) * 0.3048,
+                ref_lat,
+                ref_lon,
+                ref_alt_m,
             )
             tx_enu = _lla_to_enu_km(
-                cfg.get("tx_lat", 0), cfg.get("tx_lon", 0),
-                cfg.get("tx_alt_ft", 0) * 0.3048, ref_lat, ref_lon, ref_alt_m,
+                cfg.get("tx_lat", 0),
+                cfg.get("tx_lon", 0),
+                cfg.get("tx_alt_ft", 0) * 0.3048,
+                ref_lat,
+                ref_lon,
+                ref_alt_m,
             )
             node_setups[nid] = NodeSetup(
-                nid, rx_enu, tx_enu, cfg.get("fc_hz", cfg.get("FC", 195e6)),
+                nid,
+                rx_enu,
+                tx_enu,
+                cfg.get("fc_hz", cfg.get("FC", 195e6)),
             )
 
     # Epoch times are relative to the first, so dt=0 at the state's reference
@@ -585,8 +591,12 @@ def fit_constant_velocity(fit_input, node_configs):
         return None
 
     guess_enu = _lla_to_enu_km(
-        guess["lat"], guess["lon"], float(guess.get("alt_km", 7.0)) * 1000,
-        ref_lat, ref_lon, ref_alt_m,
+        guess["lat"],
+        guess["lon"],
+        float(guess.get("alt_km", 7.0)) * 1000,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
     )
     _v0 = fit_input.get("initial_velocity") or {}
     _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
@@ -619,7 +629,7 @@ def fit_constant_velocity(fit_input, node_configs):
     except Exception:
         return None
 
-    chi2 = float(np.sum(result.fun ** 2))
+    chi2 = float(np.sum(result.fun**2))
     state = result.x
 
     # Report the position at the *last* epoch, not at t0.  The state is
@@ -728,12 +738,20 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
         tx_alt_m = cfg.get("tx_alt_ft", 0) * 0.3048
 
         rx_enu = _lla_to_enu_km(
-            cfg.get("rx_lat", 0), cfg.get("rx_lon", 0), rx_alt_m,
-            ref_lat, ref_lon, ref_alt_m,
+            cfg.get("rx_lat", 0),
+            cfg.get("rx_lon", 0),
+            rx_alt_m,
+            ref_lat,
+            ref_lon,
+            ref_alt_m,
         )
         tx_enu = _lla_to_enu_km(
-            cfg.get("tx_lat", 0), cfg.get("tx_lon", 0), tx_alt_m,
-            ref_lat, ref_lon, ref_alt_m,
+            cfg.get("tx_lat", 0),
+            cfg.get("tx_lon", 0),
+            tx_alt_m,
+            ref_lat,
+            ref_lon,
+            ref_alt_m,
         )
         fc_hz = cfg.get("fc_hz", cfg.get("FC", 195e6))
         node_setups[nid] = NodeSetup(nid, rx_enu, tx_enu, fc_hz)
@@ -743,12 +761,14 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     for m in meas_list:
         if m["node_id"] not in node_setups:
             continue
-        measurements.append(MultiNodeMeasurement(
-            node_id=m["node_id"],
-            delay_us=m["delay_us"],
-            doppler_hz=m["doppler_hz"],
-            snr=m.get("snr", 0),
-        ))
+        measurements.append(
+            MultiNodeMeasurement(
+                node_id=m["node_id"],
+                delay_us=m["delay_us"],
+                doppler_hz=m["doppler_hz"],
+                snr=m.get("snr", 0),
+            )
+        )
 
     if len(measurements) < 2:
         return None
@@ -759,8 +779,12 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     # equations — eliminating the altitude-drift ambiguity that causes 5-10 km
     # errors in unconstrained 3D solves with only 2 nodes.
     guess_enu = _lla_to_enu_km(
-        guess["lat"], guess["lon"], guess["alt_km"] * 1000,
-        ref_lat, ref_lon, ref_alt_m,
+        guess["lat"],
+        guess["lon"],
+        guess["alt_km"] * 1000,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
     )
     z_fixed_km = guess_enu[2]  # altitude fixed in ENU km
 
@@ -815,7 +839,7 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     else:
         x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
         lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
-        ub = [x0[0] + 60, x0[1] + 60,  _V_BOUND_MS,  _V_BOUND_MS,  _VZ_BOUND_MS]
+        ub = [x0[0] + 60, x0[1] + 60, _V_BOUND_MS, _V_BOUND_MS, _VZ_BOUND_MS]
         _resid_fn, _jac_fn = _residual_function, _jacobian_function
         _args = (node_setups, measurements, z_fixed_km)
         _vz_idx = 4
@@ -855,9 +879,7 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     # vertical rate than the level-flight pin allows, so the misfit that
     # would have gone into vz leaks into the horizontal components instead —
     # velocity is statistically ~2.4x worse when this is set.
-    vz_saturated = (
-        bool(result.active_mask[_vz_idx] != 0) or abs(float(state[_vz_idx])) >= _VZ_BOUND_MS - 0.01
-    )
+    vz_saturated = bool(result.active_mask[_vz_idx] != 0) or abs(float(state[_vz_idx])) >= _VZ_BOUND_MS - 0.01
     px, py = state[0], state[1]
     if free_z:
         pz = float(state[2])
@@ -896,8 +918,7 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
         urx1 = (rx[1] - py) * inv_dprx
         urx2 = (rx[2] - pz) * inv_dprx
         pred_f = ns.K_doppler * (
-            vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2
-            + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2
+            vx_kms * utx0 + vy_kms * utx1 + vz_kms * utx2 + vx_kms * urx0 + vy_kms * urx1 + vz_kms * urx2
         )
         delay_residuals.append(m.delay_us - pred_d)
         doppler_residuals.append(m.doppler_hz - pred_f)
@@ -915,9 +936,7 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     for m, res in zip(measurements, delay_residuals):
         prev_res = per_node_delay_res_us.get(m.node_id, 0.0)
         per_node_delay_res_us[m.node_id] = max(prev_res, abs(res))
-    per_node_delay_res_us = {
-        nid: round(v, 3) for nid, v in per_node_delay_res_us.items()
-    }
+    per_node_delay_res_us = {nid: round(v, 3) for nid, v in per_node_delay_res_us.items()}
 
     # Per-solve east/north position covariance, for the Kalman track smoother
     # that consumes this as its measurement noise.
@@ -959,8 +978,12 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
     # the solved z in free mode, converted by the same call either way, so
     # alt_m reports a free altitude exactly as it reports a pinned one.
     lat, lon, alt_m = _enu_km_to_lla(
-        px, py, pz,
-        ref_lat, ref_lon, ref_alt_m,
+        px,
+        py,
+        pz,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
     )
 
     return {

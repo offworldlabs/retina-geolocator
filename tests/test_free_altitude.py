@@ -69,20 +69,16 @@ def _scene(node_configs, lat, lon, alt_km, guess_alt_km, ve=180.0, vn=-120.0, vu
     target_enu = _lla_to_enu_km(lat, lon, alt_km * 1000, lat, lon, 0.0)
     measurements = []
     for nid, cfg in node_configs.items():
-        rx_enu = _lla_to_enu_km(
-            cfg["rx_lat"], cfg["rx_lon"], cfg["rx_alt_ft"] * 0.3048, lat, lon, 0.0
+        rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"], cfg["rx_alt_ft"] * 0.3048, lat, lon, 0.0)
+        tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.3048, lat, lon, 0.0)
+        measurements.append(
+            {
+                "node_id": nid,
+                "delay_us": bistatic_delay(target_enu, tx_enu, rx_enu),
+                "doppler_hz": bistatic_doppler(target_enu, (ve, vn, vu), tx_enu, rx_enu, cfg["fc_hz"]),
+                "snr": 15.0,
+            }
         )
-        tx_enu = _lla_to_enu_km(
-            cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.3048, lat, lon, 0.0
-        )
-        measurements.append({
-            "node_id": nid,
-            "delay_us": bistatic_delay(target_enu, tx_enu, rx_enu),
-            "doppler_hz": bistatic_doppler(
-                target_enu, (ve, vn, vu), tx_enu, rx_enu, cfg["fc_hz"]
-            ),
-            "snr": 15.0,
-        })
     return {
         "initial_guess": {"lat": lat + 0.012, "lon": lon - 0.012, "alt_km": guess_alt_km},
         "initial_velocity": {"vel_east_ms": ve, "vel_north_ms": vn},
@@ -100,7 +96,7 @@ def _starts_km(alt_km):
     """The backend's free-mode starts: the nearest layer and its neighbours."""
     i = SWEEP_LAYERS_KM.index(_nearest_layer_km(alt_km))
     lo = max(0, min(i - 1, len(SWEEP_LAYERS_KM) - 3))
-    return SWEEP_LAYERS_KM[lo:lo + 3]
+    return SWEEP_LAYERS_KM[lo : lo + 3]
 
 
 def _pos_err_km(result, lat, lon):
@@ -140,9 +136,7 @@ class TestFreeAltitudeAccuracy:
         # ladder's quantisation and nothing the solve did.
         assert abs(pinned["alt_m"] / 1000.0 - alt_km) == pytest.approx(abs(layer_km - alt_km), abs=0.01)
 
-        free = solve_multinode(
-            _scene(node_configs, lat, lon, alt_km, layer_km), node_configs, free_altitude=True
-        )
+        free = solve_multinode(_scene(node_configs, lat, lon, alt_km, layer_km), node_configs, free_altitude=True)
         assert free is not None and free["success"]
         assert free["altitude_mode"] == "free"
         assert free["z_saturated"] is False
@@ -154,9 +148,7 @@ class TestFreeAltitudeAccuracy:
         """Altitude becoming an unknown does not loosen the vertical rate."""
         node_configs = _node_ring(6)
         lat, lon = REF_LAT + 0.05, REF_LON - 0.07
-        free = solve_multinode(
-            _scene(node_configs, lat, lon, 7.9, 7.0, vu=120.0), node_configs, free_altitude=True
-        )
+        free = solve_multinode(_scene(node_configs, lat, lon, 7.9, 7.0, vu=120.0), node_configs, free_altitude=True)
         assert free is not None
         assert abs(free["vel_up"]) <= 20.0
         assert free["vz_saturated"] is True
@@ -165,9 +157,7 @@ class TestFreeAltitudeAccuracy:
         """At n=2 altitude is unobservable, so the pin applies regardless."""
         node_configs = _node_ring(2)
         lat, lon = REF_LAT + 0.05, REF_LON - 0.07
-        result = solve_multinode(
-            _scene(node_configs, lat, lon, 7.9, 7.0), node_configs, free_altitude=True
-        )
+        result = solve_multinode(_scene(node_configs, lat, lon, 7.9, 7.0), node_configs, free_altitude=True)
         assert result is not None and result["success"]
         assert result["altitude_mode"] == "pinned"
         assert result["z_saturated"] is False
@@ -242,9 +232,7 @@ class TestMultistart:
         """No starts is not a reason to return nothing."""
         node_configs = _node_ring(5)
         lat, lon = REF_LAT + 0.05, REF_LON - 0.07
-        result = solve_multinode_multistart(
-            _scene(node_configs, lat, lon, 7.9, 7.0), node_configs, []
-        )
+        result = solve_multinode_multistart(_scene(node_configs, lat, lon, 7.9, 7.0), node_configs, [])
         assert result is not None
         assert result["alt_starts_km"] == [7.0]
         assert abs(result["alt_m"] / 1000.0 - 7.9) <= 0.2

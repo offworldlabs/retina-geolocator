@@ -3,11 +3,14 @@ Initial guess generator for single-node passive radar geolocation.
 Uses bistatic delay ellipsoid and antenna boresight constraint.
 """
 
-import numpy as np
 import math
+
+import numpy as np
 from scipy.optimize import minimize_scalar
-from .Geometry import Geometry
+
 from retina_geolocator.constants import C_KM_US
+
+from .Geometry import Geometry
 
 
 def lla_to_enu_km(lat, lon, alt, ref_lat, ref_lon, ref_alt):
@@ -102,11 +105,7 @@ def ellipsoid_boresight_intersection(bistatic_range_km, tx_enu, boresight_vector
     def cost(t):
         # Position along boresight at given altitude
         # t is the horizontal distance along boresight
-        pos = np.array([
-            t * boresight_horiz[0],
-            t * boresight_horiz[1],
-            altitude_km
-        ])
+        pos = np.array([t * boresight_horiz[0], t * boresight_horiz[1], altitude_km])
 
         # Calculate bistatic range for this position
         dist_tx_to_target = np.linalg.norm(pos - tx)
@@ -114,18 +113,14 @@ def ellipsoid_boresight_intersection(bistatic_range_km, tx_enu, boresight_vector
         predicted_range = dist_tx_to_target + dist_target_to_rx
 
         # Return squared error
-        return (predicted_range - bistatic_range_km)**2
+        return (predicted_range - bistatic_range_km) ** 2
 
     # Search for solution along boresight (0 to 100 km range)
-    result = minimize_scalar(cost, bounds=(0, 100), method='bounded')
+    result = minimize_scalar(cost, bounds=(0, 100), method="bounded")
 
     if result.fun < 0.01:  # Within 100m error
         t = result.x
-        pos = np.array([
-            t * boresight_horiz[0],
-            t * boresight_horiz[1],
-            altitude_km
-        ])
+        pos = np.array([t * boresight_horiz[0], t * boresight_horiz[1], altitude_km])
         return tuple(pos)
     return None
 
@@ -169,11 +164,7 @@ def generate_initial_guess(track, tx_enu, boresight_vector, frequency):
         horiz_dist = bistatic_range / 2
         boresight_horiz = np.array([boresight_vector[0], boresight_vector[1], 0])
         boresight_horiz = boresight_horiz / np.linalg.norm(boresight_horiz)
-        pos_guess = (
-            horiz_dist * boresight_horiz[0],
-            horiz_dist * boresight_horiz[1],
-            altitude
-        )
+        pos_guess = (horiz_dist * boresight_horiz[0], horiz_dist * boresight_horiz[1], altitude)
 
     # Velocity: start with zero (let solver find it)
     # Alternative: could estimate from Doppler, but heading is unknown
@@ -181,8 +172,12 @@ def generate_initial_guess(track, tx_enu, boresight_vector, frequency):
 
     # Combine into state vector
     initial_state = [
-        pos_guess[0], pos_guess[1], pos_guess[2],  # position in km
-        vel_guess[0], vel_guess[1], vel_guess[2]   # velocity in m/s
+        pos_guess[0],
+        pos_guess[1],
+        pos_guess[2],  # position in km
+        vel_guess[0],
+        vel_guess[1],
+        vel_guess[2],  # velocity in m/s
     ]
 
     return initial_state
@@ -217,13 +212,13 @@ def generate_adsb_initial_guess(track, rx_lla, config):
     adsb = first_det_with_adsb.adsb
 
     # Validate required fields
-    if 'lat' not in adsb or 'lon' not in adsb:
+    if "lat" not in adsb or "lon" not in adsb:
         return None
 
     # Get position
-    lat = adsb['lat']
-    lon = adsb['lon']
-    alt_feet = adsb.get('alt_baro', 0)  # ADS-B altitude in feet
+    lat = adsb["lat"]
+    lon = adsb["lon"]
+    alt_feet = adsb.get("alt_baro", 0)  # ADS-B altitude in feet
     alt_meters = alt_feet * 0.3048  # Convert feet to meters
 
     # Convert position: LLA → ENU (km)
@@ -239,10 +234,10 @@ def generate_adsb_initial_guess(track, rx_lla, config):
     # Derive velocity from ground speed + track angle (if available)
     vx, vy, vz = 0.0, 0.0, 0.0  # Default to zero velocity
 
-    if 'gs' in adsb and 'track' in adsb:
-        gs = adsb['gs']
-        track_angle = adsb['track']
-        geom_rate = adsb.get('geom_rate')  # Optional vertical rate
+    if "gs" in adsb and "track" in adsb:
+        gs = adsb["gs"]
+        track_angle = adsb["track"]
+        geom_rate = adsb.get("geom_rate")  # Optional vertical rate
 
         # Convert velocity
         vel_result = adsb_velocity_to_enu(gs, track_angle, geom_rate)
@@ -283,8 +278,8 @@ def select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_
         ValueError: If ADS-B guess fails and fallback is disabled
     """
     # Get config options with defaults (for backward compatibility before issue #5)
-    use_adsb = getattr(config, 'use_adsb_initial_guess', True)
-    adsb_fallback = getattr(config, 'adsb_fallback_to_geometric', True)
+    use_adsb = getattr(config, "use_adsb_initial_guess", True)
+    adsb_fallback = getattr(config, "adsb_fallback_to_geometric", True)
 
     # Try ADS-B if enabled and data available
     if use_adsb and track.adsb_initialized:
@@ -295,10 +290,7 @@ def select_initial_guess(track, tx_enu, boresight_vector, frequency, config, rx_
 
         # ADS-B guess failed
         if not adsb_fallback:
-            raise ValueError(
-                f"ADS-B initial guess failed for track {track.track_id}, "
-                "fallback to geometric disabled"
-            )
+            raise ValueError(f"ADS-B initial guess failed for track {track.track_id}, fallback to geometric disabled")
 
     # Geometric guess (current method)
     guess = generate_initial_guess(track, tx_enu, boresight_vector, frequency)
@@ -336,10 +328,7 @@ def generate_multi_start_guesses(track, tx_enu, boresight_vector, frequency, n_s
         if pos is not None:
             # Try different velocity directions (along boresight, perpendicular, etc.)
             vel_guess = (0, 0, 0)  # Start with zero velocity
-            initial_state = [
-                pos[0], pos[1], pos[2],
-                vel_guess[0], vel_guess[1], vel_guess[2]
-            ]
+            initial_state = [pos[0], pos[1], pos[2], vel_guess[0], vel_guess[1], vel_guess[2]]
             guesses.append(initial_state)
 
     if len(guesses) == 0:

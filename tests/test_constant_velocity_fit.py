@@ -24,12 +24,24 @@ _C_KM_S = 299792.458
 # Two nodes at one receiver on two transmitters — a dual-illuminator site, the
 # arrangement the n=2 case actually arises in.
 _CFGS = {
-    "a": {"rx_lat": 34.85, "rx_lon": -82.40, "rx_alt_ft": 1000,
-          "tx_lat": 34.9412, "tx_lon": -82.4103, "tx_alt_ft": 2000,
-          "fc_hz": 183e6},
-    "b": {"rx_lat": 34.85, "rx_lon": -82.40, "rx_alt_ft": 1000,
-          "tx_lat": 34.9701, "tx_lon": -81.9484, "tx_alt_ft": 800,
-          "fc_hz": 195e6},
+    "a": {
+        "rx_lat": 34.85,
+        "rx_lon": -82.40,
+        "rx_alt_ft": 1000,
+        "tx_lat": 34.9412,
+        "tx_lon": -82.4103,
+        "tx_alt_ft": 2000,
+        "fc_hz": 183e6,
+    },
+    "b": {
+        "rx_lat": 34.85,
+        "rx_lon": -82.40,
+        "rx_alt_ft": 1000,
+        "tx_lat": 34.9701,
+        "tx_lon": -81.9484,
+        "tx_alt_ft": 800,
+        "fc_hz": 195e6,
+    },
 }
 
 _R_EARTH_KM = 6371.0
@@ -45,8 +57,7 @@ def _measure(cfg, lat, lon, alt_km, ve, vn, vu, rng=None):
     """Bistatic delay (µs) and Doppler (Hz) for a target at a known state."""
     ref_alt = cfg["rx_alt_ft"] * 0.0003048
     tgt = _enu_km(lat, lon, alt_km, cfg["rx_lat"], cfg["rx_lon"], ref_alt)
-    tx = _enu_km(cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.0003048,
-                 cfg["rx_lat"], cfg["rx_lon"], ref_alt)
+    tx = _enu_km(cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.0003048, cfg["rx_lat"], cfg["rx_lon"], ref_alt)
     d_tx = math.dist(tgt, tx)
     d_rx = math.dist(tgt, (0.0, 0.0, 0.0))
     baseline = math.dist(tx, (0.0, 0.0, 0.0))
@@ -65,8 +76,7 @@ def _measure(cfg, lat, lon, alt_km, ve, vn, vu, rng=None):
     return delay_us, doppler_hz
 
 
-def _trajectory(lat, lon, alt_km, ve, vn, n_epochs, dt_s, rng=None,
-                node_ids=("a", "b")):
+def _trajectory(lat, lon, alt_km, ve, vn, n_epochs, dt_s, rng=None, node_ids=("a", "b")):
     """K epochs of measurements from a straight, level, constant-speed target."""
     epochs = []
     for k in range(n_epochs):
@@ -76,8 +86,7 @@ def _trajectory(lat, lon, alt_km, ve, vn, n_epochs, dt_s, rng=None,
         meas = []
         for nid in node_ids:
             d, f = _measure(_CFGS[nid], la, lo, alt_km, ve, vn, 0.0, rng)
-            meas.append({"node_id": nid, "delay_us": d, "doppler_hz": f,
-                         "snr": 15.0})
+            meas.append({"node_id": nid, "delay_us": d, "doppler_hz": f, "snr": 15.0})
         epochs.append({"t_s": t, "measurements": meas})
     return epochs
 
@@ -91,18 +100,12 @@ def _crossed(rng, n_epochs=5, dt_s=4.0):
     """
     p = _trajectory(34.88, -82.35, 7.0, 180.0, -90.0, n_epochs, dt_s, rng)
     q = _trajectory(34.92, -82.28, 9.0, -120.0, 150.0, n_epochs, dt_s, rng)
-    return [
-        {"t_s": x["t_s"],
-         "measurements": [x["measurements"][0], y["measurements"][1]]}
-        for x, y in zip(p, q)
-    ]
+    return [{"t_s": x["t_s"], "measurements": [x["measurements"][0], y["measurements"][1]]} for x, y in zip(p, q)]
 
 
 def _fit(epochs, lat=34.88, lon=-82.35, alt_km=7.0, vel=None):
     return fit_constant_velocity(
-        {"initial_guess": {"lat": lat, "lon": lon, "alt_km": alt_km},
-         "initial_velocity": vel,
-         "epochs": epochs},
+        {"initial_guess": {"lat": lat, "lon": lon, "alt_km": alt_km}, "initial_velocity": vel, "epochs": epochs},
         _CFGS,
     )
 
@@ -119,15 +122,15 @@ class TestRecoversAKnownTrajectory:
         n, dt = 5, 2.0
         epochs = _trajectory(lat, lon, alt, ve, vn, n, dt)
         # Deliberately start ~2 km off in position and 2 km off in altitude.
-        out = _fit(epochs, lat=lat + 0.02, lon=lon - 0.02, alt_km=9.0,
-                   vel={"vel_east_ms": 150.0, "vel_north_ms": -60.0})
+        out = _fit(
+            epochs, lat=lat + 0.02, lon=lon - 0.02, alt_km=9.0, vel={"vel_east_ms": 150.0, "vel_north_ms": -60.0}
+        )
 
         assert out is not None and out["success"]
         span = (n - 1) * dt
         exp_lat = lat + vn * span / 111_320.0
         exp_lon = lon + ve * span / (111_320.0 * math.cos(math.radians(lat)))
-        err_km = math.hypot((out["lat"] - exp_lat) * 111.32,
-                            (out["lon"] - exp_lon) * 91.3)
+        err_km = math.hypot((out["lat"] - exp_lat) * 111.32, (out["lon"] - exp_lon) * 91.3)
         assert err_km < 0.2, f"position off by {err_km:.3f} km"
         # Altitude is a free parameter here — pinning it is what removes the
         # extra constraint the test depends on — so it has to be solved for.
@@ -157,10 +160,7 @@ class TestChiSquaredIsCalibrated:
         meaningful against the real measurement noise.
         """
         rng = random.Random(7)
-        vals = [
-            _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 4.0, rng))["chi2_per_dof"]
-            for _ in range(40)
-        ]
+        vals = [_fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 4.0, rng))["chi2_per_dof"] for _ in range(40)]
         median = sorted(vals)[len(vals) // 2]
         assert 0.1 < median < 3.0, f"χ²/dof median {median:.2f} is not O(1)"
 
@@ -184,8 +184,7 @@ class TestSeparatesCrossPairings:
         """
         rng = random.Random(11)
         true_chi = sorted(
-            _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 4.0, rng))["chi2_per_dof"]
-            for _ in range(40)
+            _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 4.0, rng))["chi2_per_dof"] for _ in range(40)
         )
         false_chi = [_fit(_crossed(rng, 5, 4.0))["chi2_per_dof"] for _ in range(40)]
 
@@ -194,8 +193,7 @@ class TestSeparatesCrossPairings:
         threshold = true_chi[int(0.95 * (len(true_chi) - 1))]
         rejected = sum(1 for x in false_chi if x > threshold) / len(false_chi)
         assert rejected > 0.7, (
-            f"only {rejected:.0%} of crossed pairings rejected at 95% TPR "
-            f"(threshold χ²/dof {threshold:.2f})"
+            f"only {rejected:.0%} of crossed pairings rejected at 95% TPR (threshold χ²/dof {threshold:.2f})"
         )
 
     def test_separation_improves_with_baseline(self):
@@ -210,8 +208,7 @@ class TestSeparatesCrossPairings:
 
         def rejection(dt_s):
             true_chi = sorted(
-                _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, dt_s, rng))["chi2_per_dof"]
-                for _ in range(30)
+                _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, dt_s, rng))["chi2_per_dof"] for _ in range(30)
             )
             thr = true_chi[int(0.95 * (len(true_chi) - 1))]
             false_chi = [_fit(_crossed(rng, 5, dt_s))["chi2_per_dof"] for _ in range(30)]

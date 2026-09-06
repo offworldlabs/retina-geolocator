@@ -4,11 +4,7 @@
 import math
 
 from retina_geolocator.config_loader import Detection, Track
-from retina_geolocator.initial_guess_single import (
-    lla_to_enu_km,
-    adsb_velocity_to_enu,
-    generate_adsb_initial_guess
-)
+from retina_geolocator.initial_guess_single import adsb_velocity_to_enu, generate_adsb_initial_guess, lla_to_enu_km
 
 
 def test_lla_to_enu_km():
@@ -92,7 +88,7 @@ def test_adsb_velocity_to_enu():
     print(f"  With 1000 ft/min climb: vz={vz:.2f} m/s ✓")
 
     # Test 5: Invalid input (NaN)
-    vel = adsb_velocity_to_enu(float('nan'), 0)
+    vel = adsb_velocity_to_enu(float("nan"), 0)
     assert vel is None, "NaN input should return None"
     print("  NaN input returns None ✓")
 
@@ -108,11 +104,11 @@ def test_generate_adsb_initial_guess():
 
     # Test 1: Valid ADS-B data with position and velocity
     adsb_data = {
-        'lat': 37.85,  # ~10km north
-        'lon': -122.40,
-        'alt_baro': 5000,
-        'gs': 250,
-        'track': 90  # East
+        "lat": 37.85,  # ~10km north
+        "lon": -122.40,
+        "alt_baro": 5000,
+        "gs": 250,
+        "track": 90,  # East
     }
     det = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_data)
     track = Track("250618-A12345", [det])
@@ -147,7 +143,7 @@ def test_generate_adsb_initial_guess():
     print("  ✓ No ADS-B returns None")
 
     # Test 3: Invalid ADS-B (missing lat/lon)
-    adsb_invalid = {'alt_baro': 5000}
+    adsb_invalid = {"alt_baro": 5000}
     det_invalid = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_invalid)
     track_invalid = Track("250618-000002", [det_invalid])
 
@@ -156,11 +152,7 @@ def test_generate_adsb_initial_guess():
     print("  ✓ Invalid ADS-B returns None")
 
     # Test 4: ADS-B with position only (no velocity)
-    adsb_pos_only = {
-        'lat': 37.85,
-        'lon': -122.40,
-        'alt_baro': 3000
-    }
+    adsb_pos_only = {"lat": 37.85, "lon": -122.40, "alt_baro": 3000}
     det_pos = Detection(1718747745000, 16.1, 134.5, 18.2, adsb=adsb_pos_only)
     track_pos = Track("250618-000003", [det_pos])
 
@@ -205,12 +197,12 @@ def test_coordinate_system_consistency():
     print("  ✓ Coordinate system consistency verified")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_lla_to_enu_km()
     test_adsb_velocity_to_enu()
     test_generate_adsb_initial_guess()
     test_coordinate_system_consistency()
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("All tests passed! ✓")
-    print("="*50)
+    print("=" * 50)

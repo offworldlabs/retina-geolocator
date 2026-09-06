@@ -3,6 +3,7 @@ Bistatic radar physics models for delay and Doppler prediction.
 """
 
 import numpy as np
+
 from .Geometry import Geometry
 
 
@@ -39,6 +40,7 @@ def bistatic_delay(target_enu, tx_enu, rx_enu=(0, 0, 0)):
 
     # Convert to delay via the shared constant (see constants.py)
     from retina_geolocator.constants import C_KM_US as c_km_per_us
+
     delay = differential_range / c_km_per_us  # μs
 
     return delay
@@ -89,6 +91,7 @@ def bistatic_doppler(target_enu, velocity_enu, tx_enu, rx_enu, frequency):
     # Doppler shift (double contribution)
     # f_doppler = (f_tx / c) * (v_toward_tx + v_toward_rx)
     from retina_geolocator.constants import C_KM_S as c_km_per_s
+
     doppler = (frequency / c_km_per_s) * (v_radial_tx + v_radial_rx)  # Hz
 
     return doppler
@@ -123,8 +126,7 @@ if __name__ == "__main__":
 
     # Convert TX to ENU relative to RX
     tx_ecef = Geometry.lla2ecef(tx_lla[0], tx_lla[1], tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2],
-                                   rx_lla[0], rx_lla[1], rx_lla[2])
+    tx_enu_m = Geometry.ecef2enu(tx_ecef[0], tx_ecef[1], tx_ecef[2], rx_lla[0], rx_lla[1], rx_lla[2])
     tx_enu = tuple(x / 1000 for x in tx_enu_m)  # Convert m to km
 
     print("RX at origin: (0, 0, 0) km")

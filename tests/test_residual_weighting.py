@@ -7,6 +7,7 @@ frequency dependence has to stay pointing the right way.
 """
 
 import numpy as np
+
 from retina_geolocator.multinode_solver import (
     _SIGMA_DELAY_US,
     _SIGMA_DOPPLER_HZ,
@@ -45,8 +46,7 @@ def test_analytic_jacobian_matches_finite_differences():
         sp, sm = _STATE.copy(), _STATE.copy()
         sp[k] += h
         sm[k] -= h
-        num[:, k] = (_residual_function(sp, setups, meas, _Z)
-                     - _residual_function(sm, setups, meas, _Z)) / (2 * h)
+        num[:, k] = (_residual_function(sp, setups, meas, _Z) - _residual_function(sm, setups, meas, _Z)) / (2 * h)
     rel = np.abs(J - num) / np.maximum(np.abs(num), 1e-6)
     assert rel.max() < 1e-5, f"max relative error {rel.max():.2e}"
 

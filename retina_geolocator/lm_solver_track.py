@@ -5,18 +5,32 @@ Fits constant velocity model to time series of bistatic detections.
 
 import numpy as np
 from scipy.optimize import least_squares
-from .bistatic_models import bistatic_delay, bistatic_doppler
-from .baseline_geometry import calculate_target_azimuth, antenna_gain_pattern
+
 from retina_geolocator.constants import C_KM_S, C_KM_US
 
+from .baseline_geometry import antenna_gain_pattern, calculate_target_azimuth
+from .bistatic_models import bistatic_delay, bistatic_doppler
 
 # ---------------------------------------------------------------------------
 # Vectorised residual – processes all detections in a single numpy pass
 # ---------------------------------------------------------------------------
 
-def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
-                  frequency, f_over_c, antenna_boresight, antenna_sigma,
-                  rx_alt_m, residuals_out):
+
+def _residual_vec(
+    state,
+    dt,
+    obs_delay,
+    obs_doppler,
+    tx,
+    rx,
+    dist_tx_rx,
+    frequency,
+    f_over_c,
+    antenna_boresight,
+    antenna_sigma,
+    rx_alt_m,
+    residuals_out,
+):
     """Fully-vectorised residual function.
 
     Pre-extracted arrays are passed once from *solve_track* so that no Python
@@ -41,8 +55,8 @@ def _residual_vec(state, dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
     dx_rx = rx[0] - px
     dy_rx = rx[1] - py
     dz_rx = rx[2] - pz
-    dist_tx_t = np.sqrt(dx_tx*dx_tx + dy_tx*dy_tx + dz_tx*dz_tx)
-    dist_t_rx = np.sqrt(dx_rx*dx_rx + dy_rx*dy_rx + dz_rx*dz_rx)
+    dist_tx_t = np.sqrt(dx_tx * dx_tx + dy_tx * dy_tx + dz_tx * dz_tx)
+    dist_t_rx = np.sqrt(dx_rx * dx_rx + dy_rx * dy_rx + dz_rx * dz_rx)
     delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / C_KM_US  # µs
 
     # Bistatic Doppler  (vectorised)
@@ -166,11 +180,22 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     result = least_squares(
         _residual_vec,
         initial_state,
-        args=(dt, obs_delay, obs_doppler, tx, rx, dist_tx_rx,
-              frequency, f_over_c, antenna_boresight, antenna_sigma,
-              rx_alt_m, residuals_buf),
+        args=(
+            dt,
+            obs_delay,
+            obs_doppler,
+            tx,
+            rx,
+            dist_tx_rx,
+            frequency,
+            f_over_c,
+            antenna_boresight,
+            antenna_sigma,
+            rx_alt_m,
+            residuals_buf,
+        ),
         bounds=(bounds_lower, bounds_upper),
-        method='trf',
+        method="trf",
         ftol=1e-4,
         xtol=1e-4,
         max_nfev=max_nfev,
@@ -191,12 +216,12 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     rms_doppler = np.sqrt(np.mean(doppler_residuals**2))
 
     return {
-        'success': success,
-        'state': state_solution,
-        'residuals': residuals,
-        'rms_delay': rms_delay,
-        'rms_doppler': rms_doppler,
-        'cost': result.cost,
-        'message': result.message,
-        'nfev': result.nfev
+        "success": success,
+        "state": state_solution,
+        "residuals": residuals,
+        "rms_delay": rms_delay,
+        "rms_doppler": rms_doppler,
+        "cost": result.cost,
+        "message": result.message,
+        "nfev": result.nfev,
     }

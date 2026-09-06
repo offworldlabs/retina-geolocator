@@ -5,16 +5,15 @@ import math
 import numpy as np
 import pytest
 
+from retina_geolocator.bistatic_models import bistatic_delay, bistatic_doppler
 from retina_geolocator.multinode_solver import (
-    _lla_to_enu_km,
-    _enu_km_to_lla,
-    _residual_function,
     MultiNodeMeasurement,
     NodeSetup,
+    _enu_km_to_lla,
+    _lla_to_enu_km,
+    _residual_function,
     solve_multinode,
 )
-from retina_geolocator.bistatic_models import bistatic_delay, bistatic_doppler
-
 
 # ── Coordinate conversions ────────────────────────────────────────────────────
 
@@ -73,17 +72,21 @@ class TestBistaticModels:
     def test_doppler_stationary_is_zero(self):
         """Stationary target has zero Doppler."""
         doppler = bistatic_doppler(
-            (10, 10, 5), (0, 0, 0),  # target, vel=0
-            (20, 0, 0), (0, 0, 0),   # TX, RX
-            100e6,                     # fc
+            (10, 10, 5),
+            (0, 0, 0),  # target, vel=0
+            (20, 0, 0),
+            (0, 0, 0),  # TX, RX
+            100e6,  # fc
         )
         assert abs(doppler) < 1e-6
 
     def test_doppler_nonzero_for_moving_target(self):
         """Moving target produces non-zero Doppler."""
         doppler = bistatic_doppler(
-            (5, 10, 5), (0, 200, 0),  # 200 m/s north, offset from baseline
-            (20, 0, 0), (0, 0, 0),
+            (5, 10, 5),
+            (0, 200, 0),  # 200 m/s north, offset from baseline
+            (20, 0, 0),
+            (0, 0, 0),
             100e6,
         )
         assert abs(doppler) > 1.0
@@ -116,18 +119,19 @@ class TestResidualFunction:
             # _residual_function (C = 0.299792458 km/µs, not the 0.3 approximation
             # used by bistatic_models.bistatic_delay).
             import math as _math
+
             tx = ns.tx_enu if isinstance(ns.tx_enu, tuple) else tuple(ns.tx_enu)
             rx = ns.rx_enu if isinstance(ns.rx_enu, tuple) else tuple(ns.rx_enu)
             px2, py2, pz2 = pos[0], pos[1], pos[2]
-            dptx = _math.sqrt((px2-tx[0])**2 + (py2-tx[1])**2 + (pz2-tx[2])**2)
-            dprx = _math.sqrt((px2-rx[0])**2 + (py2-rx[1])**2 + (pz2-rx[2])**2)
-            d_bl = _math.sqrt((rx[0]-tx[0])**2 + (rx[1]-tx[1])**2 + (rx[2]-tx[2])**2)
+            dptx = _math.sqrt((px2 - tx[0]) ** 2 + (py2 - tx[1]) ** 2 + (pz2 - tx[2]) ** 2)
+            dprx = _math.sqrt((px2 - rx[0]) ** 2 + (py2 - rx[1]) ** 2 + (pz2 - rx[2]) ** 2)
+            d_bl = _math.sqrt((rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2)
             d = (dptx + dprx - d_bl) / 0.299792458
             K = ns.fc_hz / 299792.458
-            utx = ((tx[0]-px2)/dptx, (tx[1]-py2)/dptx, (tx[2]-pz2)/dptx)
-            urx = ((rx[0]-px2)/dprx, (rx[1]-py2)/dprx, (rx[2]-pz2)/dprx)
-            vx_k, vy_k, vz_k = vel[0]*1e-3, vel[1]*1e-3, vel[2]*1e-3
-            f = K * (vx_k*utx[0]+vy_k*utx[1]+vz_k*utx[2] + vx_k*urx[0]+vy_k*urx[1]+vz_k*urx[2])
+            utx = ((tx[0] - px2) / dptx, (tx[1] - py2) / dptx, (tx[2] - pz2) / dptx)
+            urx = ((rx[0] - px2) / dprx, (rx[1] - py2) / dprx, (rx[2] - pz2) / dprx)
+            vx_k, vy_k, vz_k = vel[0] * 1e-3, vel[1] * 1e-3, vel[2] * 1e-3
+            f = K * (vx_k * utx[0] + vy_k * utx[1] + vz_k * utx[2] + vx_k * urx[0] + vy_k * urx[1] + vz_k * urx[2])
             measurements.append(MultiNodeMeasurement(nid, d, f, snr=10.0))
         res = _residual_function(state, two_node_setup, measurements, z_fixed_km)
         # All residuals should be near zero
@@ -136,6 +140,7 @@ class TestResidualFunction:
     def test_z_fixed_is_used_not_state(self, two_node_setup):
         """Altitude comes from z_fixed_km, not from the state vector."""
         import math as _math
+
         # Build measurements at z=5 km using the same constant as _residual_function
         z_fixed_km = 5.0
         pos = np.array([10.0, 5.0, z_fixed_km])
@@ -146,9 +151,9 @@ class TestResidualFunction:
             tx = ns.tx_enu if isinstance(ns.tx_enu, tuple) else tuple(ns.tx_enu)
             rx = ns.rx_enu if isinstance(ns.rx_enu, tuple) else tuple(ns.rx_enu)
             px2, py2, pz2 = pos[0], pos[1], pos[2]
-            dptx = _math.sqrt((px2-tx[0])**2+(py2-tx[1])**2+(pz2-tx[2])**2)
-            dprx = _math.sqrt((px2-rx[0])**2+(py2-rx[1])**2+(pz2-rx[2])**2)
-            d_bl = _math.sqrt((rx[0]-tx[0])**2+(rx[1]-tx[1])**2+(rx[2]-tx[2])**2)
+            dptx = _math.sqrt((px2 - tx[0]) ** 2 + (py2 - tx[1]) ** 2 + (pz2 - tx[2]) ** 2)
+            dprx = _math.sqrt((px2 - rx[0]) ** 2 + (py2 - rx[1]) ** 2 + (pz2 - rx[2]) ** 2)
+            d_bl = _math.sqrt((rx[0] - tx[0]) ** 2 + (rx[1] - tx[1]) ** 2 + (rx[2] - tx[2]) ** 2)
             d = (dptx + dprx - d_bl) / 0.299792458
             meas.append(MultiNodeMeasurement(nid, d, 0.0, snr=10.0))
         # Calling with correct z_fixed should give near-zero residuals
@@ -178,44 +183,49 @@ class TestSolveMultinode:
         """Two-node config with realistic geometry around NYC area."""
         return {
             "node_a": {
-                "rx_lat": 40.7128, "rx_lon": -74.0060, "rx_alt_ft": 100,
-                "tx_lat": 40.78, "tx_lon": -73.95, "tx_alt_ft": 500,
+                "rx_lat": 40.7128,
+                "rx_lon": -74.0060,
+                "rx_alt_ft": 100,
+                "tx_lat": 40.78,
+                "tx_lon": -73.95,
+                "tx_alt_ft": 500,
                 "fc_hz": 100e6,
             },
             "node_b": {
-                "rx_lat": 40.75, "rx_lon": -73.90, "rx_alt_ft": 150,
-                "tx_lat": 40.70, "tx_lon": -73.85, "tx_alt_ft": 400,
+                "rx_lat": 40.75,
+                "rx_lon": -73.90,
+                "rx_alt_ft": 150,
+                "tx_lat": 40.70,
+                "tx_lon": -73.85,
+                "tx_alt_ft": 400,
                 "fc_hz": 100e6,
             },
         }
 
-    def _make_synthetic_input(self, node_configs, target_lat, target_lon, target_alt_km,
-                              vel_east=0.0, vel_north=0.0, vel_up=0.0):
+    def _make_synthetic_input(
+        self, node_configs, target_lat, target_lon, target_alt_km, vel_east=0.0, vel_north=0.0, vel_up=0.0
+    ):
         """Generate a realistic solver_input from known target position."""
         ref_lat = target_lat
         ref_lon = target_lon
 
-        target_enu = _lla_to_enu_km(target_lat, target_lon, target_alt_km * 1000,
-                                     ref_lat, ref_lon, 0.0)
+        target_enu = _lla_to_enu_km(target_lat, target_lon, target_alt_km * 1000, ref_lat, ref_lon, 0.0)
         measurements = []
         for nid, cfg in node_configs.items():
-            rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"],
-                                     cfg["rx_alt_ft"] * 0.3048,
-                                     ref_lat, ref_lon, 0.0)
-            tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"],
-                                     cfg["tx_alt_ft"] * 0.3048,
-                                     ref_lat, ref_lon, 0.0)
+            rx_enu = _lla_to_enu_km(cfg["rx_lat"], cfg["rx_lon"], cfg["rx_alt_ft"] * 0.3048, ref_lat, ref_lon, 0.0)
+            tx_enu = _lla_to_enu_km(cfg["tx_lat"], cfg["tx_lon"], cfg["tx_alt_ft"] * 0.3048, ref_lat, ref_lon, 0.0)
             fc = cfg.get("fc_hz", 100e6)
 
             delay = bistatic_delay(target_enu, tx_enu, rx_enu)
-            doppler = bistatic_doppler(target_enu, (vel_east, vel_north, vel_up),
-                                       tx_enu, rx_enu, fc)
-            measurements.append({
-                "node_id": nid,
-                "delay_us": delay,
-                "doppler_hz": doppler,
-                "snr": 15.0,
-            })
+            doppler = bistatic_doppler(target_enu, (vel_east, vel_north, vel_up), tx_enu, rx_enu, fc)
+            measurements.append(
+                {
+                    "node_id": nid,
+                    "delay_us": delay,
+                    "doppler_hz": doppler,
+                    "snr": 15.0,
+                }
+            )
 
         return {
             "initial_guess": {
@@ -283,7 +293,10 @@ class TestSolveMultinode:
         """Solver returns velocity components."""
         target = (40.73, -73.95, 8.0)
         s_in = self._make_synthetic_input(
-            two_node_configs, *target, vel_east=150.0, vel_north=80.0,
+            two_node_configs,
+            *target,
+            vel_east=150.0,
+            vel_north=80.0,
         )
         result = solve_multinode(s_in, two_node_configs)
         assert result is not None
@@ -305,13 +318,21 @@ class TestSolveMultinode:
         """Solver accepts 'FC' key when 'fc_hz' is missing."""
         configs = {
             "n1": {
-                "rx_lat": 40.71, "rx_lon": -74.00, "rx_alt_ft": 100,
-                "tx_lat": 40.78, "tx_lon": -73.95, "tx_alt_ft": 500,
+                "rx_lat": 40.71,
+                "rx_lon": -74.00,
+                "rx_alt_ft": 100,
+                "tx_lat": 40.78,
+                "tx_lon": -73.95,
+                "tx_alt_ft": 500,
                 "FC": 195e6,  # uses FC, not fc_hz
             },
             "n2": {
-                "rx_lat": 40.75, "rx_lon": -73.90, "rx_alt_ft": 150,
-                "tx_lat": 40.70, "tx_lon": -73.85, "tx_alt_ft": 400,
+                "rx_lat": 40.75,
+                "rx_lon": -73.90,
+                "rx_alt_ft": 150,
+                "tx_lat": 40.70,
+                "tx_lon": -73.85,
+                "tx_alt_ft": 400,
                 "FC": 195e6,
             },
         }
@@ -344,9 +365,7 @@ class TestSolveMultinode:
         result = solve_multinode(s_in, two_node_configs)
         assert result is not None
         assert "per_node_delay_res_us" in result
-        assert set(result["per_node_delay_res_us"]) == set(
-            result["contributing_node_ids"]
-        )
+        assert set(result["per_node_delay_res_us"]) == set(result["contributing_node_ids"])
         assert all(v >= 0 for v in result["per_node_delay_res_us"].values())
 
 
@@ -365,18 +384,30 @@ class TestVerticalVelocityBound:
     def three_node_configs(self):
         return {
             "node_a": {
-                "rx_lat": 40.7128, "rx_lon": -74.0060, "rx_alt_ft": 100,
-                "tx_lat": 40.78, "tx_lon": -73.95, "tx_alt_ft": 500,
+                "rx_lat": 40.7128,
+                "rx_lon": -74.0060,
+                "rx_alt_ft": 100,
+                "tx_lat": 40.78,
+                "tx_lon": -73.95,
+                "tx_alt_ft": 500,
                 "fc_hz": 100e6,
             },
             "node_b": {
-                "rx_lat": 40.75, "rx_lon": -73.90, "rx_alt_ft": 150,
-                "tx_lat": 40.70, "tx_lon": -73.85, "tx_alt_ft": 400,
+                "rx_lat": 40.75,
+                "rx_lon": -73.90,
+                "rx_alt_ft": 150,
+                "tx_lat": 40.70,
+                "tx_lon": -73.85,
+                "tx_alt_ft": 400,
                 "fc_hz": 100e6,
             },
             "node_c": {
-                "rx_lat": 40.65, "rx_lon": -73.98, "rx_alt_ft": 120,
-                "tx_lat": 40.62, "tx_lon": -73.88, "tx_alt_ft": 600,
+                "rx_lat": 40.65,
+                "rx_lon": -73.98,
+                "rx_alt_ft": 120,
+                "tx_lat": 40.62,
+                "tx_lon": -73.88,
+                "tx_alt_ft": 600,
                 "fc_hz": 100e6,
             },
         }
@@ -388,8 +419,13 @@ class TestVerticalVelocityBound:
         vz-compensated null direction."""
         vel_east, vel_north = 150.0, 80.0
         s_in = TestSolveMultinode._make_synthetic_input(
-            self, three_node_configs, 40.72, -73.93, 8.0,
-            vel_east=vel_east, vel_north=vel_north,
+            self,
+            three_node_configs,
+            40.72,
+            -73.93,
+            8.0,
+            vel_east=vel_east,
+            vel_north=vel_north,
         )
         result = solve_multinode(s_in, three_node_configs)
 
@@ -397,16 +433,20 @@ class TestVerticalVelocityBound:
         assert abs(result["vel_up"]) <= 20.0 + 1e-6
         speed = math.hypot(result["vel_east"], result["vel_north"])
         truth_speed = math.hypot(vel_east, vel_north)
-        assert abs(speed - truth_speed) < 25.0, (
-            f"speed {speed:.1f} vs truth {truth_speed:.1f}"
-        )
+        assert abs(speed - truth_speed) < 25.0, f"speed {speed:.1f} vs truth {truth_speed:.1f}"
 
     def test_n3_climbing_target_within_bound_still_fits(self, three_node_configs):
         """A genuine 15 m/s climb is inside the bound: the fit must not be
         degraded by the tighter box."""
         s_in = TestSolveMultinode._make_synthetic_input(
-            self, three_node_configs, 40.72, -73.93, 8.0,
-            vel_east=120.0, vel_north=-60.0, vel_up=15.0,
+            self,
+            three_node_configs,
+            40.72,
+            -73.93,
+            8.0,
+            vel_east=120.0,
+            vel_north=-60.0,
+            vel_up=15.0,
         )
         result = solve_multinode(s_in, three_node_configs)
 
@@ -419,8 +459,13 @@ class TestVerticalVelocityBound:
         """Clean n=3 level flight: vz stays off the bound, and the flag's
         own identity (pinned iff |vel_up| is at the bound) holds."""
         s_in = TestSolveMultinode._make_synthetic_input(
-            self, three_node_configs, 40.72, -73.93, 8.0,
-            vel_east=150.0, vel_north=80.0,
+            self,
+            three_node_configs,
+            40.72,
+            -73.93,
+            8.0,
+            vel_east=150.0,
+            vel_north=80.0,
         )
         result = solve_multinode(s_in, three_node_configs)
 
@@ -434,8 +479,14 @@ class TestVerticalVelocityBound:
         edge — the solve reports the pin, not the true rate, and the flag
         says so."""
         s_in = TestSolveMultinode._make_synthetic_input(
-            self, three_node_configs, 40.72, -73.93, 8.0,
-            vel_east=150.0, vel_north=80.0, vel_up=80.0,
+            self,
+            three_node_configs,
+            40.72,
+            -73.93,
+            8.0,
+            vel_east=150.0,
+            vel_north=80.0,
+            vel_up=80.0,
         )
         result = solve_multinode(s_in, three_node_configs)
 
