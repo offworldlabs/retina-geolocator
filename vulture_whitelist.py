@@ -20,7 +20,11 @@ starts catching NEW dead code immediately; working through them is separate.
 _ = type("_", (), {})()
 
 # ── Contracts: referenced by something vulture cannot see ─────────────────────
-# (none)
+# retina-server's backend/tests/test_wgs84_equivalence.py imports all three
+# speed-of-light constants to assert they agree (C_KM_S == C_M_S / 1000.0).
+# Nothing inside this repo reads the m/s form, but deleting it breaks that
+# cross-repo consistency check — which is the whole point of constants.py.
+C_M_S
 
 # ── UNREVIEWED: appears dead, needs a decision (delete, or finish wiring) ──────
 # TODO: config field: parsed but no reader found — wire it up or drop it
@@ -80,12 +84,6 @@ residual_function
 # TODO: config field: parsed but no reader found — wire it up or drop it
 #   retina_geolocator/config_loader.py:202  (unused attribute)
 _.rx_name
-# TODO: no reference found anywhere in the estate
-#   retina_geolocator/lm_solver_track_2d.py:168  (unused variable)
-v_radial_0
-# TODO: no reference found anywhere in the estate
-#   retina_geolocator/lm_solver_track_2d.py:168  (unused variable)
-v_tangential_0
 # TODO: config field: parsed but no reader found — wire it up or drop it
 #   retina_geolocator/config_loader.py:69  (unused attribute)
 _.velocity_bounds

@@ -11,6 +11,21 @@ State vector: [x, y, z, vx, vy, vz]
 Each node contributes two residuals per measurement:
   - Delay residual: measured_delay - predicted_delay (μs)
   - Doppler residual: measured_doppler - predicted_doppler (Hz)
+
+Both are divided by the corresponding measurement sigma so the least-squares is
+properly weighted and the two are commensurable.  Previously the delay residual
+was used raw and the Doppler residual scaled by a bare 0.1 — implying
+σ_delay = 1 μs and σ_doppler = 10 Hz, against a sensor model that produces
+0.1 μs and 2.0 Hz.  That under-weighted delay by 2× relative to Doppler.
+
+A note on frequency, because it is easy to get backwards: the Doppler Jacobian
+carries K = fc/c, so a high-band node influences the velocity solution more than
+a low-band one.  That is correct, not a bug.  Doppler noise is set by
+integration time and is therefore roughly the same in Hz across bands, so
+σ_v = σ_f·λ = σ_f·c/fc is *smaller* at high fc — a 599 MHz node genuinely
+measures velocity ~3× more precisely than a 183 MHz one and has earned the
+extra weight.  Converting the residual to m/s would remove exactly that
+weighting and make the estimator worse.
 """
 
 import math
@@ -18,11 +33,74 @@ import math
 import numpy as np
 from scipy.optimize import least_squares
 
+# Speed of light in km/µs (for delay) and km/s (for Doppler).
+from retina_geolocator.constants import C_KM_S as _C_KM_S
+from retina_geolocator.constants import C_KM_US as _C_KM_US
+
 from .Geometry import Geometry
 
-# Speed of light in km/µs (for delay) and km/s (for Doppler).
-_C_KM_US = 0.299792458
-_C_KM_S = 299792.458
+# Measurement sigmas, matching the sensor model the detections are generated
+# under (world.generate_detections_for_node: 0.1 µs and 2.0 Hz at reference
+# SNR, both scaled by the same noise factor).  Residuals are divided by these
+# so delay and Doppler enter the least-squares in units of their own
+# uncertainty rather than at an arbitrary relative scale.
+#
+# Only the *ratio* affects the solution — an overall factor cancels in the
+# argmin — and the reported rms_delay / rms_doppler are recomputed unweighted
+# in physical units afterwards, so the solver's rms gates are unaffected.
+_SIGMA_DELAY_US = 0.1
+_SIGMA_DOPPLER_HZ = 2.0
+
+# Per-component velocity bound for the solve, m/s.  Also clips the seed from
+# the association stage, whose own limit is on total speed and so can produce a
+# single component beyond this — least_squares raises on an infeasible x0.
+_V_BOUND_MS = 300.0
+# Vertical velocity bound for the single-epoch solve, m/s.  Deliberately much
+# tighter than the horizontal bound — see the note at the bounds in
+# solve_multinode.  (fit_constant_velocity keeps a looser ±100: its multi-epoch
+# span constrains velocity through the trajectory, not just the instantaneous
+# Doppler set.)
+_VZ_BOUND_MS = 20.0
+
+# Altitude bounds (ENU km) for the free-altitude solve.  Same pair
+# fit_constant_velocity uses for its own z, and for the same reason: below
+# 50 m the target is on the ground and the bistatic geometry degenerates,
+# above 20 km nothing this pipeline observes is flying.
+_Z_BOUND_MIN_KM = 0.05
+_Z_BOUND_MAX_KM = 20.0
+# How close to a z bound counts as saturated, km.  The scale of the altitude
+# error the free solve exists to remove (the caller's sweep layers are 2 km
+# apart), not of the solver's own convergence tolerance.
+_Z_SATURATION_TOL_KM = 0.01
+
+# Fewest measurements a free-altitude solve is allowed.  At n=2 the four
+# residuals cannot support six unknowns — altitude is simply unobservable and
+# the optimiser would slide along that null direction to wherever the trust
+# region ran out, which is the 5-10 km error the altitude pin was introduced
+# to remove.  Below this the pin is applied regardless of what the caller asked
+# for.
+_FREE_ALT_MIN_MEAS = 3
+
+
+def _sigma_for_snr(snr: float) -> tuple[float, float]:
+    """Per-measurement (σ_delay µs, σ_doppler Hz) from SNR.
+
+    Mirrors the sensor model the detections are generated under
+    (world.generate_detections_for_node): a base 0.1 µs / 2.0 Hz scaled by
+    ``max(0.5, 2.0 - (snr - 4)/18)``, so a marginal detection is twice as noisy
+    as the reference and a strong one half.
+
+    This is deliberately *not* the ``min(snr/10, 3.0)`` weight the position
+    solver applies.  That weight is a relative emphasis — it only has to get the
+    ordering right, and the docstring above notes an overall factor cancels in
+    the argmin.  fit_constant_velocity's output is a χ², a number compared
+    against an absolute threshold, so its σ has to be the real one or the
+    statistic is not a χ² at all.  At SNR 20 the two disagree by 2×, which would
+    be the difference between a threshold that rejects everything and one that
+    rejects nothing.
+    """
+    scale = max(0.5, 2.0 - (snr - 4.0) / 18.0) if snr > 0 else 1.0
+    return _SIGMA_DELAY_US * scale, _SIGMA_DOPPLER_HZ * scale
 
 
 def _lla_to_enu_km(lat, lon, alt_m, ref_lat, ref_lon, ref_alt_m):
@@ -118,8 +196,8 @@ def _residual_function(state, node_setups, measurements, z_fixed_km):
         pred_doppler = ns.K_doppler * (v_tx + v_rx)
 
         weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
-        residuals.append((m.delay_us - pred_delay) * weight)
-        residuals.append((m.doppler_hz - pred_doppler) * weight * 0.1)
+        residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
+        residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
 
     return np.array(residuals, dtype=np.float64)
 
@@ -132,13 +210,15 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
 
     For state [x, y, vx, vy, vz] and residuals [r_delay, r_doppler] per node:
 
-    ∂r_delay/∂x  = -w/c * ((px-tx_x)/d_tx + (px-rx_x)/d_rx)
-    ∂r_delay/∂y  = -w/c * ((py-tx_y)/d_tx + (py-rx_y)/d_rx)
+    wd = w/σ_delay,  wf = w/σ_doppler
+
+    ∂r_delay/∂x  = -wd/c * ((px-tx_x)/d_tx + (px-rx_x)/d_rx)
+    ∂r_delay/∂y  = -wd/c * ((py-tx_y)/d_tx + (py-rx_y)/d_rx)
     ∂r_delay/∂v* = 0
 
-    ∂r_doppler/∂x   = -w*0.1*K * [(-vx_kms + v_tx*utx_x)/d_tx
-                                   + (-vx_kms + v_rx*urx_x)/d_rx]
-    ∂r_doppler/∂vx  = -w*0.1*K * (utx_x + urx_x) / 1000
+    ∂r_doppler/∂x   = -wf*K * [(-vx_kms + v_tx*utx_x)/d_tx
+                                + (-vx_kms + v_rx*urx_x)/d_rx]
+    ∂r_doppler/∂vx  = -wf*K * (utx_x + urx_x) / 1000
     (similarly for y, vy, vz)
     """
     px = state[0]
@@ -173,15 +253,17 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
 
         w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        wd = w / _SIGMA_DELAY_US
+        wf = w / _SIGMA_DOPPLER_HZ
         K = ns.K_doppler
 
         # ── Delay row ──────────────────────────────────────────────────────
-        dr1_dx = -w * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
-        dr1_dy = -w * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+        dr1_dx = -wd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+        dr1_dy = -wd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
         rows.append([dr1_dx, dr1_dy, 0.0, 0.0, 0.0])
 
         # ── Doppler row ─────────────────────────────────────────────────────
-        w01 = -w * 0.1 * K
+        w01 = -wf * K
         dr2_dx = w01 * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
         dr2_dy = w01 * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
         dr2_dvx = w01 * (utx0 + urx0) * INV1000
@@ -192,7 +274,397 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
     return np.array(rows, dtype=np.float64)
 
 
-def solve_multinode(solver_input, node_configs):
+def _residual_function_free(state, node_setups, measurements):
+    """Residuals for the free-altitude state [x, y, z, vx, vy, vz].
+
+    Identical physics to _residual_function; altitude comes out of the state
+    vector instead of the caller's pin.  A separate function rather than a
+    flag on that one because the two differ in the shape of what they return
+    (five columns of Jacobian against six) and because these bodies are the
+    optimiser's inner loop — a per-measurement branch to pick the altitude
+    source would be paid on every residual evaluation of every solve,
+    including the pinned ones that are the default.
+    """
+    px = state[0]
+    py = state[1]
+    pz = state[2]
+    # Velocity in km/s (bistatic Doppler model uses km/s internally).
+    vx = state[3] * 1e-3
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    residuals = []
+
+    for m in measurements:
+        ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+        pred_delay = (dptx + dprx - ns.d_baseline_km) / _C_KM_US
+
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
+
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+        pred_doppler = ns.K_doppler * (v_tx + v_rx)
+
+        weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
+        residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
+
+    return np.array(residuals, dtype=np.float64)
+
+
+def _jacobian_function_free(state, node_setups, measurements):
+    """Analytical Jacobian for state = [x, y, z, vx, vy, vz].
+
+    The x and y partials are _jacobian_function's unchanged; z is the same
+    derivation applied to the third component, which is exactly what the
+    constant-velocity fit already does for its own free z (_cv_residuals):
+
+    ∂r_delay/∂z   = -wd/c * ((pz-tx_z)/d_tx + (pz-rx_z)/d_rx)
+    ∂r_doppler/∂z = -wf*K * [(-vz_kms + v_tx*utx_z)/d_tx
+                              + (-vz_kms + v_rx*urx_z)/d_rx]
+
+    Analytic and not numeric for the reason the pinned one is: scipy's
+    finite-difference fallback costs n_params extra residual evaluations per
+    iteration, and a free solve has six parameters rather than five.
+    """
+    px = state[0]
+    py = state[1]
+    pz = state[2]
+    vx = state[3] * 1e-3
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    inv_C = 1.0 / _C_KM_US
+    INV1000 = 1e-3
+
+    rows = []
+    for m in measurements:
+        ns = node_setups[m.node_id]
+        tx = ns.tx_enu
+        rx = ns.rx_enu
+
+        dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+        dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+
+        inv_dptx = 1.0 / dptx
+        inv_dprx = 1.0 / dprx
+        utx0 = (tx[0] - px) * inv_dptx
+        utx1 = (tx[1] - py) * inv_dptx
+        utx2 = (tx[2] - pz) * inv_dptx
+        urx0 = (rx[0] - px) * inv_dprx
+        urx1 = (rx[1] - py) * inv_dprx
+        urx2 = (rx[2] - pz) * inv_dprx
+
+        v_tx = vx * utx0 + vy * utx1 + vz * utx2
+        v_rx = vx * urx0 + vy * urx1 + vz * urx2
+
+        w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        wd = w / _SIGMA_DELAY_US
+        wf = w / _SIGMA_DOPPLER_HZ
+        K = ns.K_doppler
+
+        # ── Delay row ──────────────────────────────────────────────────────
+        dr1_dx = -wd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+        dr1_dy = -wd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+        dr1_dz = -wd * inv_C * ((pz - tx[2]) * inv_dptx + (pz - rx[2]) * inv_dprx)
+        rows.append([dr1_dx, dr1_dy, dr1_dz, 0.0, 0.0, 0.0])
+
+        # ── Doppler row ─────────────────────────────────────────────────────
+        w01 = -wf * K
+        dr2_dx = w01 * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
+        dr2_dy = w01 * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
+        dr2_dz = w01 * ((-vz + v_tx * utx2) * inv_dptx + (-vz + v_rx * urx2) * inv_dprx)
+        dr2_dvx = w01 * (utx0 + urx0) * INV1000
+        dr2_dvy = w01 * (utx1 + urx1) * INV1000
+        dr2_dvz = w01 * (utx2 + urx2) * INV1000
+        rows.append([dr2_dx, dr2_dy, dr2_dz, dr2_dvx, dr2_dvy, dr2_dvz])
+
+    return np.array(rows, dtype=np.float64)
+
+
+def _cv_residuals(state, node_setups, epochs, return_jac=False):
+    """Residuals (and optionally the Jacobian) for a constant-velocity fit.
+
+    state: [x, y, z, vx, vy, vz] — position km ENU at t0, velocity m/s ENU.
+    epochs: list of (dt_s, [(_CVMeas), ...]) with dt measured from t0.
+
+    Position at each epoch is p(t) = p0 + v·dt, so a measurement taken later in
+    the window constrains velocity through geometry as well as through Doppler.
+    That coupling is the whole point: it is what makes the system
+    over-determined and therefore testable.
+    """
+    px0, py0, pz0 = state[0], state[1], state[2]
+    vx = state[3] * 1e-3  # km/s
+    vy = state[4] * 1e-3
+    vz = state[5] * 1e-3
+
+    inv_C = 1.0 / _C_KM_US
+    res = []
+    rows = [] if return_jac else None
+
+    for dt, meas in epochs:
+        # km per (m/s) — the chain-rule factor from velocity to position.
+        dt_km_per_ms = dt * 1e-3
+        px = px0 + vx * dt
+        py = py0 + vy * dt
+        pz = pz0 + vz * dt
+
+        for m in meas:
+            ns = node_setups[m.node_id]
+            tx, rx = ns.tx_enu, ns.rx_enu
+
+            dptx = math.sqrt((px - tx[0]) ** 2 + (py - tx[1]) ** 2 + (pz - tx[2]) ** 2)
+            dprx = math.sqrt((px - rx[0]) ** 2 + (py - rx[1]) ** 2 + (pz - rx[2]) ** 2)
+            inv_dptx = 1.0 / dptx
+            inv_dprx = 1.0 / dprx
+
+            utx0 = (tx[0] - px) * inv_dptx
+            utx1 = (tx[1] - py) * inv_dptx
+            utx2 = (tx[2] - pz) * inv_dptx
+            urx0 = (rx[0] - px) * inv_dprx
+            urx1 = (rx[1] - py) * inv_dprx
+            urx2 = (rx[2] - pz) * inv_dprx
+
+            pred_delay = (dptx + dprx - ns.d_baseline_km) * inv_C
+            v_tx = vx * utx0 + vy * utx1 + vz * utx2
+            v_rx = vx * urx0 + vy * urx1 + vz * urx2
+            pred_doppler = ns.K_doppler * (v_tx + v_rx)
+
+            inv_sd = 1.0 / m.sigma_delay
+            inv_sf = 1.0 / m.sigma_doppler
+            res.append((m.delay_us - pred_delay) * inv_sd)
+            res.append((m.doppler_hz - pred_doppler) * inv_sf)
+
+            if not return_jac:
+                continue
+
+            # ── Delay row ────────────────────────────────────────────────────
+            dx = -inv_sd * inv_C * ((px - tx[0]) * inv_dptx + (px - rx[0]) * inv_dprx)
+            dy = -inv_sd * inv_C * ((py - tx[1]) * inv_dptx + (py - rx[1]) * inv_dprx)
+            dz = -inv_sd * inv_C * ((pz - tx[2]) * inv_dptx + (pz - rx[2]) * inv_dprx)
+            rows.append([dx, dy, dz, dx * dt_km_per_ms, dy * dt_km_per_ms, dz * dt_km_per_ms])
+
+            # ── Doppler row ──────────────────────────────────────────────────
+            wk = -inv_sf * ns.K_doppler
+            fx = wk * ((-vx + v_tx * utx0) * inv_dptx + (-vx + v_rx * urx0) * inv_dprx)
+            fy = wk * ((-vy + v_tx * utx1) * inv_dptx + (-vy + v_rx * urx1) * inv_dprx)
+            fz = wk * ((-vz + v_tx * utx2) * inv_dptx + (-vz + v_rx * urx2) * inv_dprx)
+            # Velocity enters twice: directly through the Doppler projection and
+            # indirectly through where the target has moved to by this epoch.
+            gvx = wk * (utx0 + urx0) * 1e-3 + fx * dt_km_per_ms
+            gvy = wk * (utx1 + urx1) * 1e-3 + fy * dt_km_per_ms
+            gvz = wk * (utx2 + urx2) * 1e-3 + fz * dt_km_per_ms
+            rows.append([fx, fy, fz, gvx, gvy, gvz])
+
+    if return_jac:
+        return np.array(rows, dtype=np.float64)
+    return np.array(res, dtype=np.float64)
+
+
+class _CVMeas:
+    """One delay/Doppler measurement with its own sigmas, for the batch fit."""
+
+    __slots__ = ("node_id", "delay_us", "doppler_hz", "sigma_delay", "sigma_doppler")
+
+    def __init__(self, node_id, delay_us, doppler_hz, snr=0.0):
+        self.node_id = node_id
+        self.delay_us = delay_us
+        self.doppler_hz = doppler_hz
+        self.sigma_delay, self.sigma_doppler = _sigma_for_snr(snr)
+
+
+def fit_constant_velocity(fit_input, node_configs):
+    """Fit one constant-velocity trajectory to K epochs of bistatic measurements.
+
+    This is the test that works at n=2, where the single-epoch residual gates
+    structurally cannot.  A single epoch from two nodes gives 4 measurements
+    against 6 unknowns (x, y, z, vx, vy, vz) — under-determined, so both
+    rms_delay and rms_doppler go to zero for a cross pairing exactly as they do
+    for a real target, and no threshold on them carries information.  Pinning
+    altitude, as solve_multinode does, trades one unknown for the ambiguity and
+    still leaves nothing to test: differentiating the two delay equations shows
+    the phantom's own velocity satisfies the *same* 2x2 system that the two
+    Doppler measurements do, so a cross pairing is self-consistent to first
+    order for as long as both aircraft are tracked.
+
+    Time is the only remaining information.  Over K epochs the count becomes 4K
+    measurements against the same 6 unknowns — over-determined from K=2, and
+    comfortably so by the 5 epochs a confirmed per-node track already carries.
+    A real target fits because it is one rigid point flying straight; a cross
+    pairing has to make two independent aircraft look like one through a
+    nonlinear geometric map, and the trajectory it needs is curved.
+
+    The fit runs in measurement space (σ ≈ 0.1 µs ≈ 30 m), not position space,
+    so it is not defeated by the GDOP amplification that puts blind n=2 position
+    error in the kilometres.
+
+    Args:
+        fit_input: {
+            "initial_guess": {"lat", "lon", "alt_km"},
+            "initial_velocity": {"vel_east_ms", "vel_north_ms"} | None,
+            "epochs": [{"t_s": float,
+                        "measurements": [{"node_id", "delay_us",
+                                          "doppler_hz", "snr"}, ...]}, ...],
+        }
+        node_configs: dict[node_id] → config with rx/tx lat/lon/alt and fc_hz.
+
+    Returns:
+        dict with success, lat, lon, alt_m, vel_east/north/up, chi2, dof,
+        chi2_per_dof, n_epochs, n_measurements, contributing_node_ids,
+        timestamp_ms — or None if the input is too thin or the fit fails.
+
+        lat/lon/alt_m are the trajectory evaluated at the *last* epoch, i.e.
+        where the target is now, not where the state vector is parameterised.
+    """
+    guess = fit_input.get("initial_guess") or {}
+    raw_epochs = fit_input.get("epochs") or []
+    if len(raw_epochs) < 2 or not guess:
+        return None
+
+    ref_lat = guess["lat"]
+    ref_lon = guess["lon"]
+    ref_alt_m = 0.0
+
+    node_setups = {}
+    for ep in raw_epochs:
+        for m in ep.get("measurements", ()):
+            nid = m["node_id"]
+            if nid in node_setups:
+                continue
+            cfg = node_configs.get(nid)
+            if cfg is None:
+                continue
+            rx_enu = _lla_to_enu_km(
+                cfg.get("rx_lat", 0),
+                cfg.get("rx_lon", 0),
+                cfg.get("rx_alt_ft", 0) * 0.3048,
+                ref_lat,
+                ref_lon,
+                ref_alt_m,
+            )
+            tx_enu = _lla_to_enu_km(
+                cfg.get("tx_lat", 0),
+                cfg.get("tx_lon", 0),
+                cfg.get("tx_alt_ft", 0) * 0.3048,
+                ref_lat,
+                ref_lon,
+                ref_alt_m,
+            )
+            node_setups[nid] = NodeSetup(
+                nid,
+                rx_enu,
+                tx_enu,
+                cfg.get("fc_hz", cfg.get("FC", 195e6)),
+            )
+
+    # Epoch times are relative to the first, so dt=0 at the state's reference
+    # and the position parameters stay well-scaled.
+    t0 = float(raw_epochs[0]["t_s"])
+    epochs = []
+    n_meas = 0
+    for ep in raw_epochs:
+        meas = [
+            _CVMeas(m["node_id"], m["delay_us"], m["doppler_hz"], m.get("snr", 0))
+            for m in ep.get("measurements", ())
+            if m["node_id"] in node_setups
+        ]
+        if not meas:
+            continue
+        epochs.append((float(ep["t_s"]) - t0, meas))
+        n_meas += len(meas)
+
+    n_resid = 2 * n_meas
+    dof = n_resid - 6
+    if len(epochs) < 2 or dof < 1:
+        return None
+
+    guess_enu = _lla_to_enu_km(
+        guess["lat"],
+        guess["lon"],
+        float(guess.get("alt_km", 7.0)) * 1000,
+        ref_lat,
+        ref_lon,
+        ref_alt_m,
+    )
+    _v0 = fit_input.get("initial_velocity") or {}
+    _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
+    _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
+    # Position starts at the ENU origin for the same reason solve_multinode does
+    # it: guess_enu[0:2] are ~1e-13 rather than exactly zero, and a near-zero
+    # ||x0|| collapses the TRF trust region into immediate false convergence.
+    x0 = np.array([0.0, 0.0, guess_enu[2], _seed_e, _seed_n, 0.0])
+
+    lb = [-60.0, -60.0, 0.05, -_V_BOUND_MS, -_V_BOUND_MS, -100.0]
+    ub = [60.0, 60.0, 20.0, _V_BOUND_MS, _V_BOUND_MS, 100.0]
+    x0 = np.clip(x0, lb, ub)
+
+    try:
+        # Plain L2, unlike solve_multinode's Huber.  Huber exists there to stop
+        # one bad channel dragging a position fix; here the sum of squares *is*
+        # the output, and down-weighting the large residuals would flatten
+        # exactly the signal the test reads.
+        result = least_squares(
+            _cv_residuals,
+            x0,
+            jac=lambda s, *a: _cv_residuals(s, *a, return_jac=True),
+            args=(node_setups, epochs),
+            method="trf",
+            bounds=(lb, ub),
+            max_nfev=200,
+            ftol=1e-8,
+            xtol=1e-8,
+        )
+    except Exception:
+        return None
+
+    chi2 = float(np.sum(result.fun**2))
+    state = result.x
+
+    # Report the position at the *last* epoch, not at t0.  The state is
+    # parameterised at the start of the window, which for a 20-sample track
+    # history is up to 40 s in the past — at 200 m/s that is 8 km of staleness
+    # in a quantity every caller reads as "where the target is".  It also feeds
+    # solver.py's 2 km displacement gate, which would reject good solves for
+    # disagreeing with a deliberately old position.  Measured: reporting t0 put
+    # the fit at 3.94 km median error against 2.62 km for a single-epoch
+    # re-solve, which is the wrong way round given the fit uses 4K measurements.
+    dt_last = epochs[-1][0]
+    px = state[0] + state[3] * 1e-3 * dt_last
+    py = state[1] + state[4] * 1e-3 * dt_last
+    pz = state[2] + state[5] * 1e-3 * dt_last
+    lat, lon, alt_m = _enu_km_to_lla(px, py, pz, ref_lat, ref_lon, ref_alt_m)
+
+    return {
+        "success": True,
+        "lat": float(lat),
+        "lon": float(lon),
+        "alt_m": float(alt_m),
+        "vel_east": float(state[3]),
+        "vel_north": float(state[4]),
+        "vel_up": float(state[5]),
+        "chi2": chi2,
+        "dof": int(dof),
+        "chi2_per_dof": chi2 / dof,
+        "n_epochs": len(epochs),
+        "n_measurements": n_meas,
+        "contributing_node_ids": sorted(node_setups),
+        "timestamp_ms": fit_input.get("timestamp_ms", 0),
+    }
+
+
+def solve_multinode(solver_input, node_configs, free_altitude=False):
     """Solve for target position using multi-node measurements.
 
     Args:
@@ -205,6 +677,20 @@ def solve_multinode(solver_input, node_configs):
             }
         node_configs: dict[node_id] → config dict with
             rx_lat, rx_lon, rx_alt_ft, tx_lat, tx_lon, tx_alt_ft, fc_hz/FC
+        free_altitude: solve altitude as a sixth unknown instead of pinning it
+            to initial_guess.alt_km.  Default False — the pinned solve is what
+            every existing caller gets, unchanged.  Ignored (pinned anyway)
+            below _FREE_ALT_MIN_MEAS measurements, where altitude is not
+            observable at all.
+
+            The pin is only as good as the caller's altitude, and a caller that
+            searches for it on a fixed ladder cannot do better than half its
+            spacing: replayed noise-free over real droplet geometry, a sweep of
+            the backend's six 2 km-spaced layers left rms_delay at a 1.76 µs
+            median against a 3.0 µs reject gate — most of the budget spent on
+            an altitude the measurements themselves determine, and enough to
+            trigger trimming of nodes that were never wrong.  Solving for z
+            instead takes that to ~0.
 
     Returns:
         dict with:
@@ -214,6 +700,17 @@ def solve_multinode(solver_input, node_configs):
             rms_delay, rms_doppler: fit quality
             n_nodes: number of nodes used
             timestamp_ms: from input
+            altitude_mode: "free" if z was solved for, "pinned" if it came
+                from initial_guess.alt_km.
+            z_saturated: True when a free solve's altitude landed on one of
+                the [_Z_BOUND_MIN_KM, _Z_BOUND_MAX_KM] bounds, so alt_m is a
+                bound and not a fit — the altitude analogue of vz_saturated,
+                and read the same way.  Always False in pinned mode.
+            cov_en_km2: 2x2 east/north position covariance (km²) as a plain
+                list-of-lists [[exx, exy], [exy, eyy]] of Python floats, or
+                None if the covariance could not be computed.
+            pos_sigma_km: sqrt(0.5*(exx+eyy)), a single-number position sigma
+                for callers that just want a scalar quality weight, or None.
         or None if solve fails
     """
     guess = solver_input["initial_guess"]
@@ -296,11 +793,56 @@ def solve_multinode(solver_input, node_configs):
     # so x=0, y=0 exactly. Using guess_enu[0:2] directly gives floating-point
     # residuals ~1e-13 that make ||x0|| ≈ 0, collapsing the TRF trust region
     # to zero and triggering immediate false-convergence on the first step.
-    x0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
+    #
+    # Velocity is seeded from the association stage's level-flight estimate
+    # when one is available.  With n=2 the system is under-determined in
+    # velocity — two Doppler projections for three components — so from a zero
+    # start the optimiser slides along the null direction and stops wherever
+    # the trust region runs out, which is where the physically impossible
+    # speeds came from.  The seed puts it on the branch the measurements
+    # actually imply; it changes nothing when the problem is well-determined.
+    # Clipped to _V_BOUND_MS: association accepts a speed up to its own limit,
+    # which a single component can exceed, and least_squares raises on an
+    # infeasible x0.
+    _v0 = solver_input.get("initial_velocity") or {}
+    _seed_e = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_east_ms") or 0.0)))
+    _seed_n = min(_V_BOUND_MS, max(-_V_BOUND_MS, float(_v0.get("vel_north_ms") or 0.0)))
 
-    # Bounds: horizontal position ±60 km from guess, velocity ±300 m/s
-    lb = [x0[0] - 60, x0[1] - 60, -300, -300, -100]
-    ub = [x0[0] + 60, x0[1] + 60, 300, 300, 100]
+    # Altitude is only an unknown when there are enough measurements to
+    # observe it — see _FREE_ALT_MIN_MEAS.
+    free_z = bool(free_altitude) and len(measurements) >= _FREE_ALT_MIN_MEAS
+
+    # Bounds: horizontal position ±60 km from guess, horizontal velocity
+    # ±_V_BOUND_MS.  Vertical velocity is pinned near level flight (±20 m/s
+    # covers commercial climb/descent): with n Doppler equations against
+    # three velocity unknowns the fit is exactly determined at n=3, and a
+    # ±100 m/s vz absorbed the entire Doppler misfit — rms_doppler came out
+    # 0.0 on every staging n=3 solve (an inert reject gate) while horizontal
+    # velocity landed ~70 m/s off and dead-reckoned the map marker km away.
+    # Tightening vz makes the velocity part overdetermined again, so
+    # vel_east/vel_north are honest and rms_doppler is a live residual.  The
+    # free-altitude state keeps that bound exactly: altitude becoming an
+    # unknown says nothing about how fast the target may climb.
+    if free_z:
+        # Seeded from the same z_fixed_km the pinned solve would have used, so
+        # a free solve and a pinned one start from the caller's altitude alike
+        # and only the freedom to move differs.  Clipped because the caller's
+        # guess can sit outside the bounds (a 0 km ADS-B altitude on the ground,
+        # say) and least_squares raises on an infeasible x0.
+        z0 = min(_Z_BOUND_MAX_KM, max(_Z_BOUND_MIN_KM, z_fixed_km))
+        x0 = np.array([0.0, 0.0, z0, _seed_e, _seed_n, 0.0])
+        lb = [-60.0, -60.0, _Z_BOUND_MIN_KM, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
+        ub = [60.0, 60.0, _Z_BOUND_MAX_KM, _V_BOUND_MS, _V_BOUND_MS, _VZ_BOUND_MS]
+        _resid_fn, _jac_fn = _residual_function_free, _jacobian_function_free
+        _args = (node_setups, measurements)
+        _vz_idx = 5
+    else:
+        x0 = np.array([0.0, 0.0, _seed_e, _seed_n, 0.0])
+        lb = [x0[0] - 60, x0[1] - 60, -_V_BOUND_MS, -_V_BOUND_MS, -_VZ_BOUND_MS]
+        ub = [x0[0] + 60, x0[1] + 60, _V_BOUND_MS, _V_BOUND_MS, _VZ_BOUND_MS]
+        _resid_fn, _jac_fn = _residual_function, _jacobian_function
+        _args = (node_setups, measurements, z_fixed_km)
+        _vz_idx = 4
 
     try:
         # `loss="huber"` — robust regression instead of plain L2.
@@ -314,10 +856,10 @@ def solve_multinode(solver_input, node_configs):
         # floor. Under pure Gaussian noise Huber behaves identically to plain
         # L2, so well-behaved frames are unaffected.
         result = least_squares(
-            _residual_function,
+            _resid_fn,
             x0,
-            jac=_jacobian_function,
-            args=(node_setups, measurements, z_fixed_km),
+            jac=_jac_fn,
+            args=_args,
             method="trf",
             loss="huber",
             f_scale=1.0,
@@ -333,11 +875,29 @@ def solve_multinode(solver_input, node_configs):
         return None
 
     state = result.x
+    # vz at the ±_VZ_BOUND_MS bound means the Doppler system wanted more
+    # vertical rate than the level-flight pin allows, so the misfit that
+    # would have gone into vz leaks into the horizontal components instead —
+    # velocity is statistically ~2.4x worse when this is set.
+    vz_saturated = bool(result.active_mask[_vz_idx] != 0) or abs(float(state[_vz_idx])) >= _VZ_BOUND_MS - 0.01
     px, py = state[0], state[1]
-    pz = z_fixed_km
-    vx_kms = state[2] * 1e-3
-    vy_kms = state[3] * 1e-3
-    vz_kms = state[4] * 1e-3
+    if free_z:
+        pz = float(state[2])
+        # The same reading as vz_saturated, for altitude: z on a bound is the
+        # optimiser being stopped rather than converging, so alt_m is the bound
+        # and not a measurement of anything.  Callers comparing free against
+        # pinned solves need to be able to exclude those.
+        z_saturated = bool(result.active_mask[2] != 0) or not (
+            _Z_BOUND_MIN_KM + _Z_SATURATION_TOL_KM < pz < _Z_BOUND_MAX_KM - _Z_SATURATION_TOL_KM
+        )
+        vel_e, vel_n, vel_u = state[3], state[4], state[5]
+    else:
+        pz = z_fixed_km
+        z_saturated = False
+        vel_e, vel_n, vel_u = state[2], state[3], state[4]
+    vx_kms = vel_e * 1e-3
+    vy_kms = vel_n * 1e-3
+    vz_kms = vel_u * 1e-3
 
     # Compute RMS delay and Doppler using the same inlined geometry as the solver.
     delay_residuals = []
@@ -366,11 +926,61 @@ def solve_multinode(solver_input, node_configs):
     rms_delay = float(np.sqrt(np.mean(np.array(delay_residuals) ** 2)))
     rms_doppler = float(np.sqrt(np.mean(np.array(doppler_residuals) ** 2)))
 
-    # Convert solution ENU back to LLA (z is fixed)
+    # Per-node worst-case delay residual, same order as `measurements`.  A
+    # contaminated measurement (a single-node track from a different
+    # aircraft bundled in by association) can inflate rms_delay well past
+    # the reject threshold while Huber keeps the fitted position good — this
+    # lets a caller identify and trim the offending node instead of
+    # discarding the whole solve.
+    per_node_delay_res_us: dict[str, float] = {}
+    for m, res in zip(measurements, delay_residuals):
+        prev_res = per_node_delay_res_us.get(m.node_id, 0.0)
+        per_node_delay_res_us[m.node_id] = max(prev_res, abs(res))
+    per_node_delay_res_us = {nid: round(v, 3) for nid, v in per_node_delay_res_us.items()}
+
+    # Per-solve east/north position covariance, for the Kalman track smoother
+    # that consumes this as its measurement noise.
+    #
+    # cov = s² * (JᵀJ)⁻¹ is the Gauss-Newton approximation to the covariance
+    # of the fit, with s² the reduced chi-square (2·cost/dof) floored at 1.0 —
+    # the floor so a fit that happens to land under the sensor-noise model
+    # never claims better accuracy than the model supports.
+    #
+    # J here is `result.jac`, which for method="trf" with loss="huber" is
+    # *not* the plain ∂residual/∂state Jacobian: scipy's TRF loop rescales it
+    # in place (`scale_for_robust_loss_function`) so that JᵀJ approximates the
+    # Hessian of the *robust* cost rather than of the raw sum-of-squares —
+    # i.e. it already carries Huber's down-weighting of whatever channel
+    # Huber exists here to reject. Either way this is a Gauss-Newton
+    # approximation, not the exact Hessian, which is fine for its one
+    # consumer (a display-side Kalman smoother's measurement noise) but not
+    # rigorous enough for hypothesis testing.
+    cov_en = None
+    pos_sigma_km = None
+    try:
+        J = np.asarray(result.jac)
+        dof = max(1, J.shape[0] - J.shape[1])
+        s2 = max(1.0, 2.0 * float(result.cost) / dof)
+        jtj = J.T @ J
+        try:
+            cov = np.linalg.inv(jtj)
+        except np.linalg.LinAlgError:
+            cov = np.linalg.pinv(jtj)
+        cov = s2 * cov
+        exx, exy, eyy = float(cov[0, 0]), float(cov[0, 1]), float(cov[1, 1])
+        if math.isfinite(exx) and math.isfinite(exy) and math.isfinite(eyy) and exx > 0 and eyy > 0:
+            cov_en = [[exx, exy], [exy, eyy]]
+            pos_sigma_km = math.sqrt(0.5 * (exx + eyy))
+    except Exception:
+        pass
+
+    # Convert solution ENU back to LLA.  pz is z_fixed_km in pinned mode and
+    # the solved z in free mode, converted by the same call either way, so
+    # alt_m reports a free altitude exactly as it reports a pinned one.
     lat, lon, alt_m = _enu_km_to_lla(
-        state[0],
-        state[1],
-        z_fixed_km,
+        px,
+        py,
+        pz,
         ref_lat,
         ref_lon,
         ref_alt_m,
@@ -381,9 +991,12 @@ def solve_multinode(solver_input, node_configs):
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
-        "vel_east": float(state[2]),
-        "vel_north": float(state[3]),
-        "vel_up": float(state[4]),
+        "vel_east": float(vel_e),
+        "vel_north": float(vel_n),
+        "vel_up": float(vel_u),
+        "vz_saturated": vz_saturated,
+        "altitude_mode": "free" if free_z else "pinned",
+        "z_saturated": z_saturated,
         "rms_delay": rms_delay,
         "rms_doppler": rms_doppler,
         "n_nodes": len(node_setups),
@@ -391,4 +1004,70 @@ def solve_multinode(solver_input, node_configs):
         "n_measurements": len(measurements),
         "cost": float(result.cost),
         "timestamp_ms": solver_input.get("timestamp_ms", 0),
+        "per_node_delay_res_us": per_node_delay_res_us,
+        "cov_en_km2": cov_en,
+        "pos_sigma_km": pos_sigma_km,
     }
+
+
+def solve_multinode_multistart(solver_input, node_configs, alt_starts_km, free_altitude=True):
+    """Run solve_multinode from several start altitudes; keep the best fit.
+
+    The free-altitude solve removes the sweep's quantisation error but not its
+    other job: the LM is local, and a 2 km-wrong start can still settle into a
+    local minimum on the wrong side of a bistatic ellipse.  A handful of
+    starts around the caller's guess restores that coverage — and, unlike the
+    caller running solve_multinode once per layer itself, does it inside ONE
+    call, which for the backend is one process-pool round trip per candidate
+    instead of six (each of which pickles the whole node-config set).
+
+    Best is by ``rms_delay``: the same metric the sweep it replaces selects
+    on, and the one the caller's reject gate reads.
+
+    Args:
+        solver_input: as solve_multinode; ``initial_guess.alt_km`` is replaced
+            by each start in turn.
+        node_configs: as solve_multinode.
+        alt_starts_km: start altitudes (km).  Empty falls back to the input's
+            own guess altitude, so a caller that computed no starts still gets
+            a solve rather than None.
+        free_altitude: passed through to solve_multinode.  True here, unlike
+            solve_multinode's own default: a multi-start pinned solve is
+            exactly the sweep, and a caller that wants that already has it.
+
+    Returns:
+        The winning solve_multinode result, with two extra fields —
+        ``alt_starts_km`` (the starts tried, in order) and ``rms_by_start``
+        (each start's rms_delay, or None where that start produced no
+        successful solve) — so a caller can see how much the extra starts
+        bought.  None when no start produced a successful solve.
+    """
+    guess = solver_input.get("initial_guess") or {}
+    starts = [float(a) for a in (alt_starts_km or [])]
+    if not starts:
+        starts = [float(guess.get("alt_km", 7.0))]
+
+    best_result = None
+    best_rms = float("inf")
+    rms_by_start: list[float | None] = []
+
+    for alt_km in starts:
+        s_try = dict(solver_input)
+        s_try["initial_guess"] = dict(guess, alt_km=alt_km)
+        result = solve_multinode(s_try, node_configs, free_altitude=free_altitude)
+        if not result or not result.get("success"):
+            rms_by_start.append(None)
+            continue
+        rms_raw = result.get("rms_delay")
+        rms = float("inf") if rms_raw is None else float(rms_raw)
+        rms_by_start.append(None if math.isinf(rms) else rms)
+        if rms < best_rms:
+            best_rms = rms
+            best_result = result
+
+    if best_result is None:
+        return None
+
+    best_result["alt_starts_km"] = starts
+    best_result["rms_by_start"] = rms_by_start
+    return best_result

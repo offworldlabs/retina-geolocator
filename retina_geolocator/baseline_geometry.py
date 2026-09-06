@@ -8,19 +8,27 @@ import numpy as np
 from .Geometry import Geometry
 
 
-def calculate_baseline_geometry(rx_lla, tx_lla):
+def calculate_baseline_geometry(rx_lla, tx_lla, beam_azimuth_deg=None):
     """
     Calculate baseline geometry between receiver and transmitter.
 
     Args:
         rx_lla: (lat, lon, alt) of receiver in degrees and meters
         tx_lla: (lat, lon, alt) of transmitter in degrees and meters
+        beam_azimuth_deg: the node's configured antenna aim, if it declares
+            one.  When absent the boresight defaults to broadside —
+            (baseline_azimuth + 90) % 360 — matching
+            retina_analytics.constants.resolve_beam_azimuth_deg, so the two
+            libraries no longer give different answers for the same node.
+            (This replaces a hardcoded pick-the-option-closest-to-225°
+            heuristic from one specific south-west-facing deployment, which
+            silently mis-aimed every node whose antenna faced anywhere else.)
 
     Returns:
         dict with:
             - baseline_azimuth: azimuth from RX to TX in degrees (0-360)
             - baseline_distance: distance in km
-            - antenna_boresight: perpendicular azimuth (baseline_az + 90 or - 90) in degrees
+            - antenna_boresight: azimuth of the antenna aim in degrees
             - antenna_boresight_vector: unit vector in ENU frame
     """
     # Convert TX position to ENU relative to RX
@@ -39,23 +47,13 @@ def calculate_baseline_geometry(rx_lla, tx_lla):
     # Calculate baseline distance
     baseline_distance = np.sqrt(east_km**2 + north_km**2 + up_km**2)  # km
 
-    # Calculate perpendicular azimuth (antenna boresight)
-    # User indicated antenna pointed SW, perpendicular to baseline
-    # TX is SW of RX, so baseline points ~SW
-    # Perpendicular could be +90 or -90
-    # Check both and pick the one closer to 225 degrees (SW)
-    option1 = (baseline_azimuth + 90) % 360
-    option2 = (baseline_azimuth - 90) % 360
-
-    # Pick the one closer to 225 degrees (true SW)
-    diff1 = abs(option1 - 225)
-    diff2 = abs(option2 - 225)
-    if diff1 > 180:
-        diff1 = 360 - diff1
-    if diff2 > 180:
-        diff2 = 360 - diff2
-
-    antenna_boresight = option1 if diff1 < diff2 else option2
+    # Antenna boresight: configured aim when the node declares one, otherwise
+    # broadside to the baseline — the same convention as
+    # retina_analytics.constants.resolve_beam_azimuth_deg.
+    if beam_azimuth_deg is not None and np.isfinite(beam_azimuth_deg):
+        antenna_boresight = float(beam_azimuth_deg) % 360
+    else:
+        antenna_boresight = (baseline_azimuth + 90) % 360
 
     # Convert boresight azimuth to unit vector in ENU
     az_rad = np.radians(antenna_boresight)

@@ -6,6 +6,8 @@ Fits constant velocity model to time series of bistatic detections.
 import numpy as np
 from scipy.optimize import least_squares
 
+from retina_geolocator.constants import C_KM_S, C_KM_US
+
 from .baseline_geometry import antenna_gain_pattern, calculate_target_azimuth
 from .bistatic_models import bistatic_delay, bistatic_doppler
 
@@ -55,7 +57,7 @@ def _residual_vec(
     dz_rx = rx[2] - pz
     dist_tx_t = np.sqrt(dx_tx * dx_tx + dy_tx * dy_tx + dz_tx * dz_tx)
     dist_t_rx = np.sqrt(dx_rx * dx_rx + dy_rx * dy_rx + dz_rx * dz_rx)
-    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / 0.299792458  # µs
+    delay_pred = (dist_tx_t + dist_t_rx - dist_tx_rx) / C_KM_US  # µs
 
     # Bistatic Doppler  (vectorised)
     inv_tx = 1.0 / dist_tx_t
@@ -168,7 +170,7 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
     tx = np.asarray(tx_enu, dtype=np.float64)
     rx = np.asarray(rx_enu, dtype=np.float64)
     dist_tx_rx = np.linalg.norm(rx - tx)
-    f_over_c = frequency / 299792.458  # Hz / (km/s) → 1/km
+    f_over_c = frequency / C_KM_S  # Hz / (km/s) → 1/km
 
     antenna_sigma = (48.0 / 2.355) if antenna_boresight is not None else 0.0
 
@@ -223,63 +225,3 @@ def solve_track(track, initial_state, tx_enu, rx_enu, frequency, antenna_boresig
         "message": result.message,
         "nfev": result.nfev,
     }
-
-
-if __name__ == "__main__":
-    # Test the solver
-    import sys
-
-    sys.path.append(".")
-    from baseline_geometry import calculate_baseline_geometry
-    from config_loader import load_config, load_tracks
-    from Geometry import Geometry
-    from initial_guess_single import generate_initial_guess
-
-    print("Testing LM track solver\n")
-
-    # Load config
-    config = load_config("config.yml")
-    print(config)
-    print()
-
-    # Calculate baseline geometry
-    geometry = calculate_baseline_geometry(config.rx_lla, config.tx_lla)
-
-    # Convert TX to ENU (in km)
-    tx_ecef = Geometry.lla2ecef(config.tx_lla[0], config.tx_lla[1], config.tx_lla[2])
-    tx_enu_m = Geometry.ecef2enu(
-        tx_ecef[0], tx_ecef[1], tx_ecef[2], config.rx_lla[0], config.rx_lla[1], config.rx_lla[2]
-    )
-    tx_enu = tuple(x / 1000 for x in tx_enu_m)
-    rx_enu = (0, 0, 0)
-
-    # Load a track with good SNR
-    tracks = load_tracks("events_full_window.jsonl", min_detections=20)
-
-    # Try first few tracks
-    for i in range(min(3, len(tracks))):
-        track = tracks[i]
-        print(f"\n{'=' * 60}")
-        print(f"Track {i + 1}: {track}")
-        print(f"First detection: {track.detections[0]}")
-        print(f"Last detection:  {track.detections[-1]}")
-
-        # Generate initial guess
-        initial_guess = generate_initial_guess(track, tx_enu, geometry["antenna_boresight_vector"], config.frequency)
-        print("\nInitial guess:")
-        print(f"  Position: ({initial_guess[0]:.2f}, {initial_guess[1]:.2f}, {initial_guess[2]:.2f}) km")
-        print(f"  Velocity: ({initial_guess[3]:.1f}, {initial_guess[4]:.1f}, {initial_guess[5]:.1f}) m/s")
-
-        # Solve
-        print("\nSolving...")
-        solution = solve_track(track, initial_guess, tx_enu, rx_enu, config.frequency)
-
-        print("\nResults:")
-        print(f"  Success: {solution['success']}")
-        print(f"  Message: {solution['message']}")
-        print(f"  Function evaluations: {solution['nfev']}")
-        print(f"  Position: ({solution['state'][0]:.2f}, {solution['state'][1]:.2f}, {solution['state'][2]:.2f}) km")
-        print(f"  Velocity: ({solution['state'][3]:.1f}, {solution['state'][4]:.1f}, {solution['state'][5]:.1f}) m/s")
-        print(f"  RMS delay error: {solution['rms_delay']:.3f} μs")
-        print(f"  RMS Doppler error: {solution['rms_doppler']:.3f} Hz")
-        print(f"  Cost: {solution['cost']:.6f}")
