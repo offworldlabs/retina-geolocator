@@ -243,3 +243,74 @@ class TestReportedPositionIsCurrent:
         out = _fit(_trajectory(lat, lon, 7.0, 0.0, 0.0, 6, 2.0))
         err_km = math.hypot((out["lat"] - lat) * 111.32, (out["lon"] - lon) * 91.3)
         assert err_km < 0.3
+
+
+class TestPinnedAltitude:
+    """fix_altitude=True fits [x, y, vx, vy] with z held at the caller's guess.
+
+    At n=2 altitude is not observable — four measurements per epoch against a
+    vertical direction nothing constrains — so the free fit spends z wherever
+    the noise points and drags x/y with it through the bistatic geometry.
+    Live, the free fit published n=2 altitudes of -1721 m, -466 m and 15249 m.
+    Pinning z costs one degree of freedom and removes the failure mode; these
+    tests pin that the pinned path converges, reports the pin, and leaves the
+    default path exactly as it was.
+    """
+
+    def _pinned(self, epochs, lat=34.88, lon=-82.35, alt_km=7.0, vel=None):
+        return fit_constant_velocity(
+            {"initial_guess": {"lat": lat, "lon": lon, "alt_km": alt_km}, "initial_velocity": vel, "epochs": epochs},
+            _CFGS,
+            fix_altitude=True,
+        )
+
+    def test_pinned_at_truth_recovers_position(self):
+        """Alt pinned at the true altitude: horizontal answer to ~100 m, vz == 0."""
+        lat, lon, alt_km, ve, vn = 34.88, -82.35, 7.0, 180.0, -90.0
+        out = self._pinned(_trajectory(lat, lon, alt_km, ve, vn, 6, 3.0), alt_km=alt_km)
+        assert out is not None and out["success"]
+        assert out["altitude_fixed"] is True
+        assert out["vel_up"] == 0.0
+
+        # The fit reports the trajectory at the last epoch, 15 s downrange.
+        dt = 15.0
+        exp_lat = lat + vn * dt / 111_320.0
+        exp_lon = lon + ve * dt / (111_320.0 * math.cos(math.radians(lat)))
+        err_km = math.hypot((out["lat"] - exp_lat) * 111.32, (out["lon"] - exp_lon) * 91.3)
+        assert err_km < 0.1, err_km
+        assert out["alt_m"] == pytest.approx(alt_km * 1000, abs=1.0)
+
+    def test_pinned_two_km_off_still_converges(self):
+        """A wrong pin is a bias, not a divergence — and it is reported as a pin.
+
+        The whole point of pinning is that the caller owns the altitude; when
+        the caller's altitude is wrong the fit must still return a usable
+        horizontal position rather than failing or wandering, so downstream can
+        keep judging it on its own gates.
+        """
+        lat, lon, alt_km = 34.88, -82.35, 7.0
+        out = self._pinned(_trajectory(lat, lon, alt_km, 180.0, -90.0, 6, 3.0), alt_km=alt_km + 2.0)
+        assert out is not None and out["success"]
+        assert out["altitude_fixed"] is True
+        assert out["alt_m"] == pytest.approx((alt_km + 2.0) * 1000, abs=1.0)
+        assert out["vel_up"] == 0.0
+
+    def test_dof_drops_by_one_state(self):
+        """4 unknowns instead of 6 over the same residuals."""
+        epochs = _trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 3.0)
+        free = _fit(epochs)
+        pinned = self._pinned(epochs)
+        assert pinned["dof"] == free["dof"] + 2
+        assert pinned["n_measurements"] == free["n_measurements"]
+
+    def test_default_path_reports_a_free_altitude(self):
+        """The default keeps solving z, and says so."""
+        out = _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 3.0))
+        assert out["altitude_fixed"] is False
+
+    def test_pinned_fit_still_separates_a_crossed_pairing(self):
+        """Losing z must not lose the χ² test the fit exists for."""
+        rng = random.Random(11)
+        true_fit = self._pinned(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 4.0, rng))
+        cross_fit = self._pinned(_crossed(rng))
+        assert cross_fit["chi2_per_dof"] > 10 * true_fit["chi2_per_dof"]
