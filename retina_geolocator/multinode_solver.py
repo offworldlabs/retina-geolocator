@@ -485,7 +485,7 @@ class _CVMeas:
         self.sigma_delay, self.sigma_doppler = _sigma_for_snr(snr)
 
 
-def fit_constant_velocity(fit_input, node_configs):
+def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
     """Fit one constant-velocity trajectory to K epochs of bistatic measurements.
 
     This is the test that works at n=2, where the single-epoch residual gates
@@ -519,14 +519,33 @@ def fit_constant_velocity(fit_input, node_configs):
                                           "doppler_hz", "snr"}, ...]}, ...],
         }
         node_configs: dict[node_id] → config with rx/tx lat/lon/alt and fc_hz.
+        fix_altitude: keyword-only.  Pin z to initial_guess.alt_km and hold
+            vz = 0, fitting the 4-state [x, y, vx, vy] instead of the 6-state.
+            Default False — every existing caller gets the free-z fit it had.
+
+            The free z exists so the χ² test is not handed a free parameter's
+            worth of slack, and for that it is right.  It is wrong for
+            *position*: at n=2 altitude is not observable, and the fit spends
+            the unobservable direction wherever the noise points.  Measured on
+            14 published n=2 solves from a 20-minute synthetic capture, the
+            free fit returned altitudes of -1721 m, -466 m and 15249 m against
+            a truth band around 7-11 km — |published alt − truth| at a 4.57 km
+            median, worse than the 2.94 km of the ladder guess it replaced —
+            and because a wrong z leans on x and y through the bistatic
+            geometry, it drags the horizontal answer with it.  Pinning z to the
+            caller's own altitude guess costs one degree of freedom (dof =
+            2·n_meas − 4) and removes that failure mode.
 
     Returns:
         dict with success, lat, lon, alt_m, vel_east/north/up, chi2, dof,
         chi2_per_dof, n_epochs, n_measurements, contributing_node_ids,
-        timestamp_ms — or None if the input is too thin or the fit fails.
+        altitude_fixed, timestamp_ms — or None if the input is too thin or the
+        fit fails.
 
         lat/lon/alt_m are the trajectory evaluated at the *last* epoch, i.e.
         where the target is now, not where the state vector is parameterised.
+        With fix_altitude, alt_m is the pinned altitude by construction and
+        vel_up is exactly 0.
     """
     guess = fit_input.get("initial_guess") or {}
     raw_epochs = fit_input.get("epochs") or []
@@ -586,7 +605,8 @@ def fit_constant_velocity(fit_input, node_configs):
         n_meas += len(meas)
 
     n_resid = 2 * n_meas
-    dof = n_resid - 6
+    n_state = 4 if fix_altitude else 6
+    dof = n_resid - n_state
     if len(epochs) < 2 or dof < 1:
         return None
 
@@ -604,10 +624,36 @@ def fit_constant_velocity(fit_input, node_configs):
     # Position starts at the ENU origin for the same reason solve_multinode does
     # it: guess_enu[0:2] are ~1e-13 rather than exactly zero, and a near-zero
     # ||x0|| collapses the TRF trust region into immediate false convergence.
-    x0 = np.array([0.0, 0.0, guess_enu[2], _seed_e, _seed_n, 0.0])
+    if fix_altitude:
+        # z is a constant of the fit, not a parameter.  Rather than write a
+        # second residual function, expand the 4-state back to the 6-state the
+        # existing one takes and drop the z/vz Jacobian columns: the residual
+        # math has exactly one implementation, and the pinned fit is a
+        # projection of the free one onto a subspace.
+        z_pin = float(min(20.0, max(0.05, guess_enu[2])))
 
-    lb = [-60.0, -60.0, 0.05, -_V_BOUND_MS, -_V_BOUND_MS, -100.0]
-    ub = [60.0, 60.0, 20.0, _V_BOUND_MS, _V_BOUND_MS, 100.0]
+        def _expand(s4):
+            return np.array([s4[0], s4[1], z_pin, s4[2], s4[3], 0.0])
+
+        def _fun(s4, *args):
+            return _cv_residuals(_expand(s4), *args)
+
+        def _jac(s4, *args):
+            # Columns are [x, y, z, vx, vy, vz]; keep the four we still fit.
+            return _cv_residuals(_expand(s4), *args, return_jac=True)[:, (0, 1, 3, 4)]
+
+        x0 = np.array([0.0, 0.0, _seed_e, _seed_n])
+        lb = [-60.0, -60.0, -_V_BOUND_MS, -_V_BOUND_MS]
+        ub = [60.0, 60.0, _V_BOUND_MS, _V_BOUND_MS]
+    else:
+        _fun = _cv_residuals
+
+        def _jac(s, *args):
+            return _cv_residuals(s, *args, return_jac=True)
+
+        x0 = np.array([0.0, 0.0, guess_enu[2], _seed_e, _seed_n, 0.0])
+        lb = [-60.0, -60.0, 0.05, -_V_BOUND_MS, -_V_BOUND_MS, -100.0]
+        ub = [60.0, 60.0, 20.0, _V_BOUND_MS, _V_BOUND_MS, 100.0]
     x0 = np.clip(x0, lb, ub)
 
     try:
@@ -616,9 +662,9 @@ def fit_constant_velocity(fit_input, node_configs):
         # the output, and down-weighting the large residuals would flatten
         # exactly the signal the test reads.
         result = least_squares(
-            _cv_residuals,
+            _fun,
             x0,
-            jac=lambda s, *a: _cv_residuals(s, *a, return_jac=True),
+            jac=_jac,
             args=(node_setups, epochs),
             method="trf",
             bounds=(lb, ub),
@@ -630,7 +676,7 @@ def fit_constant_velocity(fit_input, node_configs):
         return None
 
     chi2 = float(np.sum(result.fun**2))
-    state = result.x
+    state = _expand(result.x) if fix_altitude else result.x
 
     # Report the position at the *last* epoch, not at t0.  The state is
     # parameterised at the start of the window, which for a 20-sample track
@@ -660,6 +706,7 @@ def fit_constant_velocity(fit_input, node_configs):
         "n_epochs": len(epochs),
         "n_measurements": n_meas,
         "contributing_node_ids": sorted(node_setups),
+        "altitude_fixed": bool(fix_altitude),
         "timestamp_ms": fit_input.get("timestamp_ms", 0),
     }
 
