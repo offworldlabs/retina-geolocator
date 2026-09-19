@@ -485,7 +485,7 @@ class _CVMeas:
         self.sigma_delay, self.sigma_doppler = _sigma_for_snr(snr)
 
 
-def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
+def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False, max_nfev=200):
     """Fit one constant-velocity trajectory to K epochs of bistatic measurements.
 
     This is the test that works at n=2, where the single-epoch residual gates
@@ -536,6 +536,10 @@ def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
             caller's own altitude guess costs one degree of freedom (dof =
             2·n_meas − 4) and removes that failure mode.
 
+        max_nfev: optimizer evaluation budget, default 200. Increasing it
+            permits offline convergence experiments without changing runtime
+            latency for existing callers.
+
     Returns:
         dict with success, lat, lon, alt_m, vel_east/north/up, chi2, dof,
         chi2_per_dof, n_epochs, n_measurements, contributing_node_ids,
@@ -546,6 +550,13 @@ def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
         where the target is now, not where the state vector is parameterised.
         With fix_altitude, alt_m is the pinned altitude by construction and
         vel_up is exactly 0.
+
+        optimizer_success/status/nfev describe actual termination separately
+        from the legacy success flag (a numerical result exists).
+        horizontal_sigma_km is the largest local horizontal standard
+        deviation at the last epoch, under the measurement-noise/CV model;
+        None means the Jacobian is rank deficient. It does not represent
+        global branch ambiguity or unmodeled calibration errors.
     """
     guess = fit_input.get("initial_guess") or {}
     raw_epochs = fit_input.get("epochs") or []
@@ -668,7 +679,7 @@ def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
             args=(node_setups, epochs),
             method="trf",
             bounds=(lb, ub),
-            max_nfev=200,
+            max_nfev=max_nfev,
             ftol=1e-8,
             xtol=1e-8,
         )
@@ -692,8 +703,38 @@ def fit_constant_velocity(fit_input, node_configs, *, fix_altitude=False):
     pz = state[2] + state[5] * 1e-3 * dt_last
     lat, lon, alt_m = _enu_km_to_lla(px, py, pz, ref_lat, ref_lon, ref_alt_m)
 
+    # Local measurement-noise uncertainty at the reported (last) epoch.
+    # Residual fit alone does not establish observability: two almost
+    # redundant bistatic paths can fit very well at the wrong position.
+    # Never turn a rank-deficient inverse into a misleading zero variance.
+    horizontal_sigma_km = None
+    jacobian_rank = 0
+    try:
+        _, singular, vt = np.linalg.svd(result.jac, full_matrices=False)
+        tolerance = np.finfo(float).eps * max(result.jac.shape) * singular[0]
+        jacobian_rank = int(np.sum(singular > tolerance))
+        if jacobian_rank == len(result.x):
+            covariance = (vt.T / singular**2) @ vt * max(1.0, chi2 / dof)
+            advance = np.zeros((2, len(result.x)))
+            advance[0, 0] = advance[1, 1] = 1
+            velocity_offset = 2 if fix_altitude else 3
+            advance[0, velocity_offset] = advance[1, velocity_offset + 1] = dt_last * 1e-3
+            xy_covariance = advance @ covariance @ advance.T
+            horizontal_sigma_km = float(np.sqrt(max(0.0, np.linalg.eigvalsh(xy_covariance)[-1])))
+    except (ValueError, np.linalg.LinAlgError):
+        pass
+
     return {
+        # `success` historically means a usable numerical result. Preserve
+        # that API while exposing optimizer termination for validation and
+        # callers that require confirmed convergence.
         "success": True,
+        "optimizer_success": bool(result.success),
+        "optimizer_status": int(result.status),
+        "optimizer_nfev": int(result.nfev),
+        "horizontal_sigma_km": horizontal_sigma_km,
+        "jacobian_rank": jacobian_rank,
+        "z_saturated": bool(not fix_altitude and result.active_mask[2] != 0),
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
@@ -1035,6 +1076,9 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
 
     return {
         "success": True,
+        "optimizer_success": bool(result.success),
+        "optimizer_status": int(result.status),
+        "optimizer_nfev": int(result.nfev),
         "lat": float(lat),
         "lon": float(lon),
         "alt_m": float(alt_m),
