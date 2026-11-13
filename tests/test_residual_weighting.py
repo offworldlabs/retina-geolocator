@@ -6,15 +6,19 @@ analytic Jacobian has to track whatever weighting the residuals use, and the
 frequency dependence has to stay pointing the right way.
 """
 
+import json
+
 import numpy as np
 
 from retina_geolocator.multinode_solver import (
-    _SIGMA_DELAY_US,
-    _SIGMA_DOPPLER_HZ,
     MultiNodeMeasurement,
     NodeSetup,
     _jacobian_function,
+    _jacobian_function_free,
     _residual_function,
+    _residual_function_free,
+    snr_weight,
+    solve_multinode,
 )
 
 _STATE = np.array([12.0, 18.0, 180.0, 120.0, 3.0])
@@ -35,36 +39,70 @@ def _scene():
     return setups, meas
 
 
-def test_analytic_jacobian_matches_finite_differences():
-    """The Jacobian is hand-derived, so it silently drifts from the residuals
-    whenever their weighting changes.  This pins the two together."""
-    setups, meas = _scene()
-    J = _jacobian_function(_STATE, setups, meas, _Z)
+def _fd_max_relative_error(residual, jacobian, state):
+    J = jacobian(state)
     num = np.zeros_like(J)
-    for k in range(len(_STATE)):
-        h = 1e-6 * max(abs(_STATE[k]), 1.0)
-        sp, sm = _STATE.copy(), _STATE.copy()
+    for k in range(len(state)):
+        h = 1e-6 * max(abs(state[k]), 1.0)
+        sp, sm = state.copy(), state.copy()
         sp[k] += h
         sm[k] -= h
-        num[:, k] = (_residual_function(sp, setups, meas, _Z) - _residual_function(sm, setups, meas, _Z)) / (2 * h)
-    rel = np.abs(J - num) / np.maximum(np.abs(num), 1e-6)
-    assert rel.max() < 1e-5, f"max relative error {rel.max():.2e}"
+        num[:, k] = (residual(sp) - residual(sm)) / (2 * h)
+    return (np.abs(J - num) / np.maximum(np.abs(num), 1e-6)).max()
 
 
-def test_residuals_are_scaled_by_the_measurement_sigmas():
+def test_analytic_jacobian_matches_finite_differences():
+    """The Jacobian is hand-derived, so it silently drifts from the residuals
+    whenever their weighting changes.  This pins the two together, for the
+    pinned and the free-altitude solve, with one measurement carrying its own
+    weight and the others falling back to their SNR."""
     setups, meas = _scene()
-    r = _residual_function(_STATE, setups, meas, _Z)
-    # Recompute with sigmas removed and confirm the ratio is exactly the sigmas.
-    m = meas[0]
-    ns = setups[m.node_id]
-    w = min(m.snr / 10.0, 3.0)
-    # Delay residual is the first entry for the first measurement.
-    raw_delay = r[0] * _SIGMA_DELAY_US / w
-    assert abs(raw_delay) > 0
-    # Sanity: doubling sigma_doppler would halve the Doppler residual, so the
-    # two constants are the only thing setting the delay/Doppler balance.
-    assert _SIGMA_DELAY_US > 0 and _SIGMA_DOPPLER_HZ > 0
-    assert ns.K_doppler > 0
+    meas[1].weight = 0.4
+    pinned = _fd_max_relative_error(
+        lambda s: _residual_function(s, setups, meas, _Z),
+        lambda s: _jacobian_function(s, setups, meas, _Z),
+        _STATE,
+    )
+    free = _fd_max_relative_error(
+        lambda s: _residual_function_free(s, setups, meas),
+        lambda s: _jacobian_function_free(s, setups, meas),
+        np.insert(_STATE, 2, _Z),
+    )
+    assert pinned < 1e-5, f"pinned max relative error {pinned:.2e}"
+    assert free < 1e-5, f"free max relative error {free:.2e}"
+
+
+def test_residuals_are_scaled_by_the_measurement_weight():
+    setups, meas = _scene()
+    meas[0].weight = 1.5
+    state = np.insert(_STATE, 2, _Z)
+    light = _residual_function_free(state, setups, meas)
+    meas[0].weight = 3.0
+    heavy = _residual_function_free(state, setups, meas)
+    assert np.array_equal(heavy[:2], 2 * light[:2])
+    assert np.array_equal(heavy[2:], light[2:])
+
+
+def test_measurement_weight_reaches_the_solve():
+    """A weight equal to the SNR fallback changes nothing; any other does."""
+    configs = {
+        nid: {"rx_lat": 34.85, "rx_lon": -82.40 + dx, "tx_lat": 34.95, "tx_lon": -82.10, "fc_hz": fc}
+        for nid, dx, fc in [("a", -0.20, 183e6), ("b", 0.10, 599e6), ("c", 0.25, 201e6)]
+    }
+    meas = [
+        {"node_id": "a", "delay_us": 42.0, "doppler_hz": -201.0, "snr": 14.0},
+        {"node_id": "b", "delay_us": 55.0, "doppler_hz": -420.0, "snr": 11.0},
+        {"node_id": "c", "delay_us": 38.0, "doppler_hz": 90.0, "snr": 9.0},
+    ]
+
+    def solve(measurements):
+        guess = {"lat": 34.9, "lon": -82.3, "alt_km": 7.0}
+        out = solve_multinode({"initial_guess": guess, "measurements": measurements}, configs)
+        return json.dumps(out, sort_keys=True, default=str)
+
+    plain = solve(meas)
+    assert solve([{**m, "weight": snr_weight(m["snr"])} for m in meas]) == plain
+    assert solve([{**meas[0], "weight": 0.2}, *meas[1:]]) != plain
 
 
 def test_higher_carrier_gets_more_velocity_weight():
