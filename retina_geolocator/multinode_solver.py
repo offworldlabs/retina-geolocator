@@ -133,14 +133,23 @@ class NodeSetup:
         self.K_doppler = fc_hz / _C_KM_S
 
 
+def snr_weight(snr):
+    """Emphasis of a measurement by its measured SNR.
+
+    Used when a measurement carries no weight of its own.
+    """
+    return min(snr / 10.0, 3.0) if snr > 0 else 1.0
+
+
 class MultiNodeMeasurement:
     """A single delay/Doppler measurement from one node."""
 
-    def __init__(self, node_id, delay_us, doppler_hz, snr=0.0):
+    def __init__(self, node_id, delay_us, doppler_hz, snr=0.0, weight=None):
         self.node_id = node_id
         self.delay_us = delay_us
         self.doppler_hz = doppler_hz
         self.snr = snr
+        self.weight = weight
 
 
 def _residual_function(state, node_setups, measurements, z_fixed_km):
@@ -195,7 +204,7 @@ def _residual_function(state, node_setups, measurements, z_fixed_km):
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
         pred_doppler = ns.K_doppler * (v_tx + v_rx)
 
-        weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        weight = m.weight if m.weight is not None else snr_weight(m.snr)
         residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
         residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
 
@@ -252,7 +261,7 @@ def _jacobian_function(state, node_setups, measurements, z_fixed_km):
         v_tx = vx * utx0 + vy * utx1 + vz * utx2
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
 
-        w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        w = m.weight if m.weight is not None else snr_weight(m.snr)
         wd = w / _SIGMA_DELAY_US
         wf = w / _SIGMA_DOPPLER_HZ
         K = ns.K_doppler
@@ -317,7 +326,7 @@ def _residual_function_free(state, node_setups, measurements):
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
         pred_doppler = ns.K_doppler * (v_tx + v_rx)
 
-        weight = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        weight = m.weight if m.weight is not None else snr_weight(m.snr)
         residuals.append((m.delay_us - pred_delay) * weight / _SIGMA_DELAY_US)
         residuals.append((m.doppler_hz - pred_doppler) * weight / _SIGMA_DOPPLER_HZ)
 
@@ -370,7 +379,7 @@ def _jacobian_function_free(state, node_setups, measurements):
         v_tx = vx * utx0 + vy * utx1 + vz * utx2
         v_rx = vx * urx0 + vy * urx1 + vz * urx2
 
-        w = min(m.snr / 10.0, 3.0) if m.snr > 0 else 1.0
+        w = m.weight if m.weight is not None else snr_weight(m.snr)
         wd = w / _SIGMA_DELAY_US
         wf = w / _SIGMA_DOPPLER_HZ
         K = ns.K_doppler
@@ -718,7 +727,8 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
         solver_input: dict from InterNodeAssociator.format_candidates_for_solver():
             {
                 "initial_guess": {"lat", "lon", "alt_km"},
-                "measurements": [{"node_id", "delay_us", "doppler_hz", "snr"}, ...],
+                "measurements": [{"node_id", "delay_us", "doppler_hz", "snr", "weight"}, ...],
+                    # "weight" is optional; absent or None = SNR emphasis (snr_weight)
                 "n_nodes": int,
                 "timestamp_ms": int,
             }
@@ -814,6 +824,7 @@ def solve_multinode(solver_input, node_configs, free_altitude=False):
                 delay_us=m["delay_us"],
                 doppler_hz=m["doppler_hz"],
                 snr=m.get("snr", 0),
+                weight=m.get("weight"),
             )
         )
 
