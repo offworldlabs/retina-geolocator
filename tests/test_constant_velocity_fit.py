@@ -111,6 +111,52 @@ def _fit(epochs, lat=34.88, lon=-82.35, alt_km=7.0, vel=None):
 
 
 class TestRecoversAKnownTrajectory:
+    def test_uncertainty_scales_with_measurement_noise(self, monkeypatch):
+        from retina_geolocator import multinode_solver
+
+        epochs = _trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 20, 2.0)
+        first = _fit(epochs)
+        monkeypatch.setattr(multinode_solver, "_SIGMA_DELAY_US", 0.2)
+        monkeypatch.setattr(multinode_solver, "_SIGMA_DOPPLER_HZ", 4.0)
+        second = _fit(epochs)
+        assert first["jacobian_rank"] == 6
+        assert first["horizontal_sigma_km"] > 0
+        assert second["horizontal_sigma_km"] == pytest.approx(2 * first["horizontal_sigma_km"], rel=0.02)
+
+    def test_rank_deficient_fit_does_not_claim_zero_uncertainty(self, monkeypatch):
+        from retina_geolocator import multinode_solver
+
+        original = multinode_solver.least_squares
+
+        def redundant(*args, **kwargs):
+            result = original(*args, **kwargs)
+            result.jac[:, 1] = result.jac[:, 0]
+            return result
+
+        monkeypatch.setattr(multinode_solver, "least_squares", redundant)
+        out = _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 2.0))
+        assert out["jacobian_rank"] < 6
+        assert out["horizontal_sigma_km"] is None
+
+    def test_exhausted_optimizer_is_not_reported_as_converged(self, monkeypatch):
+        from retina_geolocator import multinode_solver
+
+        original = multinode_solver.least_squares
+
+        def exhausted(*args, **kwargs):
+            result = original(*args, **kwargs)
+            result.success = False
+            result.status = 0
+            result.nfev = 200
+            return result
+
+        monkeypatch.setattr(multinode_solver, "least_squares", exhausted)
+        out = _fit(_trajectory(34.88, -82.35, 7.0, 180.0, -90.0, 5, 2.0))
+        assert out is not None
+        assert out["optimizer_success"] is False
+        assert out["optimizer_status"] == 0
+        assert out["optimizer_nfev"] == 200
+
     def test_noiseless_fit_is_exact(self):
         """Position, altitude and velocity all come back, from a wrong start.
 
