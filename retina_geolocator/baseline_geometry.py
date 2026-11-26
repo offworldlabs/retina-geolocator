@@ -123,7 +123,7 @@ def calculate_target_azimuth(target_enu):
 
 if __name__ == "__main__":
     # Test with config values
-    rx_lla = (33.93918, -84.65191, 290)  # meters
+    rx_lla = (33.90000, -84.60000, 290)  # meters
     tx_lla = (33.75667, -84.33184, 488)  # meters
 
     geometry = calculate_baseline_geometry(rx_lla, tx_lla)
