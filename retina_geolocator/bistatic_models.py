@@ -121,7 +121,7 @@ if __name__ == "__main__":
     print("Testing bistatic radar models\n")
 
     # Setup geometry (using config values converted to ENU relative to RX at origin)
-    rx_lla = (33.93918, -84.65191, 290)
+    rx_lla = (33.90000, -84.60000, 290)
     tx_lla = (33.75667, -84.33184, 488)
 
     # Convert TX to ENU relative to RX

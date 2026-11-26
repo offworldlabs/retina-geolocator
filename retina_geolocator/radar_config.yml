@@ -1,17 +1,17 @@
 # Radar system configuration (blah2 format)
-# Network 13 node: Atlanta, GA
+# Example node (placeholder site): copy a node's own config.yml over this
 
 location:
   rx:
-    latitude: 33.939182
-    longitude: -84.651910
+    latitude: 33.900000
+    longitude: -84.600000
     altitude: 289.56      # 950 ft in meters
-    name: RX-Net13
+    name: RX-Example
   tx:
     latitude: 33.75667
     longitude: -84.331844
     altitude: 487.68      # 1600 ft in meters
-    name: TX-Net13
+    name: TX-Example
 
 capture:
   fc: 195000000           # 195 MHz center frequency
